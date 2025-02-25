@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Análisis Masa Madre</title>
+    <link rel="stylesheet" href="masaMadre.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="icon" type="image/jpg" href="./Fotos/favicon.png"/>
+</head>
+<body>
+    <div class="app-wrapper">
+        <!-- Sidebar -->
+        <div class="sidebar" id="sidebar">
+            <div class="logo-container">
+                <h2>Panel Control</h2>
+                <button id="toggle-sidebar" class="toggle-btn">
+                    <i class="fas fa-bars"></i>
+                </button>
+            </div>
+            <div class="user-info">
+                <i class="fas fa-user-circle"></i>
+                <span id="username-display">Usuario</span>
+            </div>
+            <nav class="nav-menu">
+                <a href="index.html" class="nav-item">
+                    <i class="fas fa-home"></i>
+                    <span>Inicio</span>
+                </a>
+                <a href="Concatenar.html" class="nav-item">
+                    <i class="fas fa-file-excel"></i>
+                    <span>Concatenador SKUs</span>
+                </a>
+                <a href="masaMadre.html" class="nav-item active">
+                    <i class="fas fa-bread-slice"></i>
+                    <span>Masa Madre</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <i class="fas fa-dragon"></i>
+                    <span>Stock Dragon</span>
+                </a>
+                <a href="dividirarchivos.html" class="nav-item">
+                    <i class="fa-solid fa-file-excel"></i>
+                    <span>Dividir Excel</span>
+                </a>
+                <a href="CargaVentas.html" class="nav-item">
+                    <i class="fas fa-cash-register"></i>
+                    <span>Carga de Ventas</span>
+                </a>
+                <a href="./Dashboard.html" class="nav-item">
+                    <i class="fas fa-chart-line"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <i class="fas fa-chart-bar"></i>
+                    <span>Estadísticas</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <i class="fas fa-cog"></i>
+                    <span>Configuración</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button id="logout-btn" class="logout-btn">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span>Cerrar Sesión</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content" id="main-content">
+            <div class="header">
+                <h1>Análisis Masa Madre</h1>
+                <p class="subtitle">Analiza el rendimiento y rotación de productos</p>
+            </div>
+
+            <div class="content-wrapper">
+                <!-- Upload Section -->
+                <div class="upload-section">
+                    <div class="upload-container">
+                        <div class="file-upload-card">
+                            <div class="card-icon">
+                                <i class="fas fa-file-upload"></i>
+                            </div>
+                            <h2>Archivo de Productos</h2>
+                            <div class="upload-area">
+                                <input type="file" id="productoFile" accept=".xlsx,.xls">
+                                <p class="upload-text">Arrastra tu archivo aquí o haz clic para seleccionar</p>
+                            </div>
+                            <div class="file-status" id="productoStatus">
+                                <i class="fas fa-check-circle"></i>
+                                Archivo cargado: <span class="file-name"></span>
+                            </div>
+                        </div>
+
+                <!-- Sucursales Section -->
+                <div class="sucursales-section">
+                    <div class="sucursal-selector-container">
+                        <h3><i class="fas fa-store"></i> Seleccionar Sucursales</h3>
+                        <div class="sucursal-controls">
+                            <button id="selectAllBtn" class="control-btn">
+                                <i class="fas fa-check-square"></i> Seleccionar Todo
+                            </button>
+                            <button id="deselectAllBtn" class="control-btn">
+                                <i class="fas fa-square"></i> Deseleccionar Todo
+                            </button>
+                        </div>
+                        <div class="sucursal-groups">
+                            <div class="sucursal-group">
+                                <h4>CHELSEA</h4>
+                                <div class="sucursales-list" id="chelseaGroup"></div>
+                            </div>
+                            <div class="sucursal-group">
+                                <h4>SEVEN</h4>
+                                <div class="sucursales-list" id="sevenGroup"></div>
+                            </div>
+                           <!-- <div class="sucursal-group">
+                                <h4>EXIT</h4>
+                                <div class="sucursales-list" id="exitGroup"></div>
+                            </div> -->
+                           <!-- <div class="sucursal-group">
+                                <h4>TOP</h4>
+                                <div class="sucursales-list" id="topGroup"></div>
+                            </div> -->
+                           <!-- <div class="sucursal-group">
+                                <h4>OTROS</h4>
+                                <div class="sucursales-list" id="otrosGroup"></div>
+                            </div> -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="action-buttons">
+                    <button id="procesarBtn" class="process-btn" disabled>
+                        <i class="fas fa-cogs"></i>
+                        Procesar Archivo
+                    </button>
+                </div>
+
+                <div class="progress-container" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill"></div>
+                    </div>
+                    <div class="progress-text"></div>
+                </div>
+
+                <div id="processingStatus" class="processing-status"></div>
+
+                <!-- Visualization Section -->
+                <div id="visualizationContainer"></div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="footer-content">
+                <div class="footer-left">
+                    <p class="copyright">© 2024 - Desarrollado por <span class="author">Miguel Pieroni</span></p>
+                </div>
+                <div class="footer-right">
+                    <div class="footer-links">
+                        <a href="#" target="_blank">Contacto</a>
+                        <a href="#" target="_blank">Documentación</a>
+                        <a href="#" target="_blank">Versión 1.0.0</a>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="masaMadre-script.js"></script>
+</body>
+</html>

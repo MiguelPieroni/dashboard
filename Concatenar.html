@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Concatenador SKUs</title>
+    <link rel="stylesheet" href="concatenador-styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="icon" type="image/jpg" href="./Fotos/favicon.png"/>
+</head>
+<body>
+    <div class="app-wrapper">
+        <!-- Sidebar -->
+        <div class="sidebar" id="sidebar">
+            <div class="logo-container">
+                <h2>Panel Control</h2>
+                <button id="toggle-sidebar" class="toggle-btn">
+                    <i class="fas fa-bars"></i>
+                </button>
+            </div>
+            <div class="user-info">
+                <i class="fas fa-user-circle"></i>
+                <span id="username-display">Usuario</span>
+            </div>
+            <nav class="nav-menu">
+                <a href="index.html" class="nav-item">
+                    <i class="fas fa-home"></i>
+                    <span>Inicio</span>
+                <a href="Concatenar.html" class="nav-item active">
+                    <i class="fas fa-file-excel"></i>
+                    <span>Concatenador SKUs</span>
+                </a>
+                <a href="masaMadre.html" class="nav-item">
+                    <i class="fas fa-bread-slice"></i>
+                    <span>Masa Madre</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <i class="fas fa-dragon"></i>
+                    <span>Stock Dragon</span>
+                </a>
+                <a href="dividirarchivos.html" class="nav-item">
+                    <i class="fa-solid fa-file-excel"></i>
+                    <span>Dividir Excel</span>
+                </a>
+                </a>
+                <a href="CargaVentas.html" class="nav-item">
+                    <i class="fas fa-cash-register"></i>
+                    <span>Carga de Ventas</span>
+                </a>
+                <a href="Dashboard.html" class="nav-item">
+                <i class="fas fa-chart-line"></i>
+                <span>Dashboard</span>
+                 </a>
+                <a href="#" class="nav-item">
+                    <i class="fas fa-chart-bar"></i>
+                    <span>Estadísticas</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <i class="fas fa-cog"></i>
+                    <span>Configuración</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button id="logout-btn" class="logout-btn">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span>Cerrar Sesión</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content" id="main-content">
+            <div class="header">
+                <h1>Concatenador de SKUs</h1>
+                <p class="subtitle">Procesa y combina códigos SKU de diferentes archivos</p>
+            </div>
+
+            <div class="content-wrapper">
+                <!-- Reemplazar la sección de upload en el HTML -->
+<div class="upload-section">
+    <div class="upload-container">
+        <div class="file-upload-card">
+            <div class="card-icon">
+                <i class="fas fa-file-upload"></i>
+            </div>
+            <h2>1. Códigos de Fabricante e IDSKU</h2>
+            <div class="upload-area">
+                <input type="file" id="fabricanteFile" accept=".xlsx,.xls,.csv">
+                <p class="upload-text">Arrastra tu archivo aquí o haz clic para seleccionar</p>
+            </div>
+            <div class="file-status" id="fabricanteStatus">
+                <i class="fas fa-check-circle"></i>
+                Archivo cargado: <span class="file-name"></span>
+            </div>
+        </div>
+        
+        <div class="info-section">
+            <h3><i class="fas fa-info-circle"></i>Requisitos del archivo</h3>
+            <div class="file-requirements">
+                <ul class="requirements-list">
+                    <li>Formato: Excel (.xlsx, .xls) o CSV</li>
+                    <li>Primera columna: Código_de_Fabricante</li>
+                    <li>Segunda columna: IDSKU</li>
+                    <li>Sin encabezados vacíos o datos faltantes</li>
+                    <li>El archivo no puede contener espacios, formulas o formateo especial.</li>
+                    <li>No debe contener fórmulas o formateo especial</li>
+                    <li><br></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="upload-container">
+        <div class="file-upload-card">
+            <div class="card-icon">
+                <i class="fas fa-file-upload"></i>
+            </div>
+            <h2>2. Modelos con generos</h2>
+            <div class="upload-area">
+                <input type="file" id="modelosFile" accept=".xlsx,.xls,.csv">
+                <p class="upload-text">Arrastra tu archivo aquí o haz clic para seleccionar</p>
+            </div>
+            <div class="file-status" id="modelosStatus">
+                <i class="fas fa-check-circle"></i>
+                Archivo cargado: <span class="file-name"></span>
+            </div>
+        </div>
+
+        <div class="info-section">
+            <h3><i class="fas fa-info-circle"></i>Requisitos del archivo</h3>
+            <div class="file-requirements">
+                <ul class="requirements-list">
+                    <li>Formato: Excel (.xlsx, .xls) o CSV</li>
+                    <li>Primera columna: Modelo</li>
+                    <li>Segunda columna: Código de Producto</li>
+                    <li>Tercera columna: Género</li>
+                    <li>El archivo no puede contener espacios, formulas o formateo especial.</li>
+                    <li>Sin encabezados vacíos o datos faltantes</li> 
+                    <li>Los géneros deben estar escritos de esta forma ( Hombre, Mujer, Unisex, Juvenil, Niño y Bebe ) </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+                <div class="action-buttons">
+                    <button id="procesarBtn" class="process-btn" disabled>
+                        <i class="fas fa-cogs"></i>
+                        Procesar Archivos
+                    </button>
+                </div>
+
+                <div id="processingStatus" class="processing-status"></div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="footer-content">
+                <div class="footer-left">
+                    <p class="copyright">© 2024 - Desarrollado por <span class="author">Miguel Pieroni</span></p>
+                </div>
+                <div class="footer-right">
+                    <div class="footer-links">
+                        <a href="#" target="_blank">Contacto</a>
+                        <a href="#" target="_blank">Documentación</a>
+                        <a href="#" target="_blank">Versión 1.0.0</a>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.5/xlsx.full.min.js"></script>
+    <script src="concatenador-script.js"></script>
+</body>
+</html>

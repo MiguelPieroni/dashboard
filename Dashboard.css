@@ -1,0 +1,711 @@
+/* Estilos específicos del Dashboard */
+
+.dashboard-wrapper {
+    padding: 20px;
+    background-color: var(--white);
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 30px;
+}
+
+.resumen-container {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 20px;
+    margin-bottom: 30px;
+    width: 100%; /* Asegurar ancho completo */
+}
+
+.kpi-section {
+    flex: 1;
+    background-color: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    min-width: 0; /* Importante para evitar desbordamiento */
+}
+
+/* Barra de título con color */
+.kpi-section.generales h2 {
+    color: var(--text-color);
+    border-bottom: 2px solid var(--primary-color);
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+    text-align: center;
+    position: relative;
+}
+
+.kpi-section.meli h2 {
+    color: var(--text-color);
+    border-bottom: 2px solid #fff159;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+    text-align: center;
+    position: relative;
+}
+
+.kpi-section.bapro h2 {
+    color: var(--text-color);
+    border-bottom: 2px solid #005eb8;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+    text-align: center;
+    position: relative;
+}
+
+/* Colores de borde lateral para cada sección */
+.kpi-section.generales {
+    border-left: 4px solid var(--primary-color);
+}
+
+.kpi-section.meli {
+    border-left: 4px solid #fff159; /* Color de Mercado Libre */
+}
+
+.kpi-section.bapro {
+    border-left: 4px solid #005eb8; /* Color de Banco Provincia */
+}
+
+.kpi-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    flex: 1; /* Hacer que ocupe el espacio disponible */
+}
+
+/* Mantener el estilo original de las cards pero con algunos ajustes */
+.resumen-card {
+    background-color: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    text-align: center;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    transition: transform 0.3s ease;
+    margin-bottom: 10px;
+}
+
+.resumen-card:hover {
+    transform: translateY(-2px);
+}
+
+.resumen-card h3 {
+    color: var(--text-color);
+    font-size: 0.9rem;
+    margin-bottom: 10px;
+}
+
+.resumen-card p {
+    color: var(--primary-color);
+    font-size: 1.3rem;
+    font-weight: bold;
+    margin: 0;
+}
+
+/* Estilos para la nueva sección VTEX */
+.kpi-section.vtex h2 {
+    color: var(--text-color);
+    border-bottom: 2px solid #0073B3; /* Color VTEX - azul */
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+    text-align: center;
+    position: relative;
+}
+
+.kpi-section.vtex {
+    border-left: 4px solid #0073B3; /* Color VTEX - azul */
+}
+
+.vtex .resumen-card p {
+    color: #0073B3; /* Color VTEX - azul */
+}
+
+/* Actualizar el contenedor de KPIs para 4 columnas */
+.resumen-container {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 20px;
+    margin-bottom: 30px;
+    width: 100%;
+    flex-wrap: wrap;
+}
+
+.kpi-section {
+    flex: 1;
+    min-width: 22%; /* Reducido de 25% para dar espacio a los márgenes */
+}
+
+/* Responsive para KPIs */
+@media (max-width: 1200px) {
+    .kpi-section {
+        min-width: 45%;
+    }
+}
+
+@media (max-width: 768px) {
+    .kpi-section {
+        min-width: 100%;
+    }
+}
+
+/* Estilos para números específicos */
+.meli .resumen-card p {
+    color: #af9318; /* Un tono más oscuro basado en el amarillo de MeLi */
+}
+
+.bapro .resumen-card p {
+    color: #00458b; /* Un tono más oscuro basado en el azul de Bapro */
+}
+
+/* Responsive adjustments */
+@media (max-width: 992px) {
+    .resumen-container {
+        flex-direction: column;
+    }
+    
+    .kpi-section {
+        margin-bottom: 20px;
+    }
+}
+
+/* Estilos para los gráficos */
+.charts-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+}
+
+.chart-card {
+    background-color: var(--white);
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.chart-card.wide {
+    grid-column: span 2;
+    height: auto; /* Aumentado de 500px */
+}
+
+.chart-card h3 {
+    color: var(--text-color);
+    font-size: 1.1rem;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+}
+
+/* Modificar en Dashboard.css */
+.chart-container {
+    position: relative;
+    height: 480px; /* Aumentado de 400px */
+    width: 100%;
+    margin: 20px 0;
+}
+
+.chart-card {
+    min-height: 500px; /* Aumentado proporcionalmente */
+    padding: 25px;
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+    .charts-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .chart-card.wide {
+        grid-column: span 1;
+    }
+}
+
+@media (max-width: 768px) {
+    .resumen-container {
+        grid-template-columns: 1fr;
+    }
+
+    .chart-container {
+        height: 250px;
+    }
+
+    .dashboard-wrapper {
+        padding: 15px;
+    }
+}
+
+/* Estilos para las animaciones de carga */
+.loading {
+    position: relative;
+    min-height: 200px;
+}
+
+.loading::after {
+    content: 'Cargando...';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--text-color);
+}
+
+/* Estilos para mensajes de error o sin datos */
+.no-data {
+    text-align: center;
+    padding: 40px 20px;
+    color: #666;
+    font-style: italic;
+}
+
+/* Tooltips personalizados para los gráficos */
+.chart-tooltip {
+    background-color: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+/* Estilos para la sección de filtros */
+.filters-section {
+    background-color: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 20px;
+}
+
+.filters-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.filter-group label {
+    font-size: 0.9rem;
+    color: #374151;
+    font-weight: 500;
+}
+
+.date-filters, .store-filters {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.filter-item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    flex: 1;
+    min-width: 200px;
+}
+
+.filter-item label {
+    color: var(--text-color);
+    font-size: 0.9rem;
+}
+
+.filter-input {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.filter-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.filter-btn, .report-btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    transition: background-color 0.3s;
+}
+
+.filter-btn {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.filter-btn:hover {
+    background-color: var(--secondary-color);
+}
+
+.report-btn {
+    background-color: #f44336;
+    color: white;
+}
+
+.report-btn:hover {
+    background-color: #d32f2f;
+}
+
+/* Mejoras en los gráficos existentes */
+.chart-card {
+    transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.chart-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .filters-section {
+        padding: 15px;
+    }
+
+    .filter-item {
+        min-width: 100%;
+    }
+
+    .filter-actions {
+        flex-direction: column;
+    }
+
+    .filter-btn, .report-btn {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+.toggle-values-btn {
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-bottom: 10px;
+    font-size: 0.9rem;
+}
+
+.toggle-values-btn:hover {
+    background-color: #45a049;
+}
+
+
+/* Ajustes específicos por tipo de gráfico */
+.chart-card.wide .chart-container {
+    height: 500px; /* Aumentado de 400px */
+    width: 100%;
+    justify-content: flex-end;
+}
+
+/* Ajustes para las leyendas */
+.chart-legend-container {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    margin-bottom: 10px;
+}
+
+.date-input-wrapper {
+    position: relative;
+}
+
+.custom-date-input {
+    width: 100%;
+    padding: 10px;
+    padding-right: 30px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    background-color: white;
+    transition: border-color 0.2s;
+}
+
+.date-input-wrapper i {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #6b7280;
+    pointer-events: none;
+}
+
+.custom-date-input:focus {
+    outline: none;
+    border-color: #4CAF50;
+    box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.1);
+}
+
+/* Estilos para selects */
+.select-wrapper {
+    position: relative;
+}
+
+.custom-select {
+    width: 100%;
+    padding: 10px;
+    padding-right: 30px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    background-color: white;
+    appearance: none;
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+
+.select-wrapper i {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #6b7280;
+    pointer-events: none;
+}
+
+.custom-select:focus {
+    outline: none;
+    border-color: #4CAF50;
+    box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.1);
+}
+
+/* Estilos para botones */
+.filter-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.filter-btn, .report-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+}
+
+.filter-btn {
+    background-color: #4CAF50;
+    color: white;
+}
+
+.filter-btn:hover {
+    background-color: #45a049;
+}
+
+.report-btn {
+    background-color: #f44336;
+    color: white;
+}
+
+.report-btn:hover {
+    background-color: #d32f2f;
+}
+
+/* Estilos responsivos */
+@media (max-width: 768px) {
+    .filters-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .filter-actions {
+        flex-direction: column;
+    }
+
+    .filter-btn, .report-btn {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+.flatpickr-calendar {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 3px 13px rgba(0, 0, 0, 0.15);
+    font-family: inherit;
+}
+
+.flatpickr-day.selected {
+    background: #4CAF50 !important;
+    border-color: #4CAF50 !important;
+}
+
+.flatpickr-day:hover {
+    background: #e8f5e9;
+}
+
+.flatpickr-day.today {
+    border-color: #4CAF50;
+}
+
+.flatpickr-months {
+    padding-top: 6px;
+}
+
+.flatpickr-current-month {
+    padding-top: 0;
+    font-size: 1.1em;
+}
+
+.flatpickr-weekday {
+    font-size: 0.9em;
+    color: #4CAF50;
+}
+
+.flatpickr-months .flatpickr-month {
+    height: 40px;
+}
+
+.date-input-wrapper {
+    position: relative;
+}
+
+.date-input-wrapper i {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #6b7280;
+    pointer-events: none;
+}
+
+.custom-date-input {
+    width: 100%;
+    padding: 10px 35px 10px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    color: #374151;
+    background: white;
+}
+
+.custom-date-input:focus {
+    outline: none;
+    border-color: #4CAF50;
+    box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.1);
+}
+
+.custom-date-input::placeholder {
+    color: #9ca3af;
+}
+
+.quick-reports {
+    margin-bottom: 20px;
+    padding: 10px;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.quick-reports h3 {
+    text-align: center;
+    margin-bottom: 15px;
+    color: var(--text-color);
+    font-size: 1.1rem;
+}
+
+.quick-reports-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+}
+
+.report-group {
+    background-color: #f8f9fa;
+    padding: 15px;
+    border-radius: 6px;
+}
+
+.report-group h4 {
+    margin-bottom: 10px;
+    color: var(--text-color);
+    font-size: 1rem;
+}
+
+.quick-report-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    margin: 5px;
+    border: none;
+    border-radius: 4px;
+    background-color: var(--primary-color);
+    color: white;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background-color 0.2s;
+}
+
+.quick-report-btn:hover {
+    background-color: var(--secondary-color);
+}
+
+.resumen-card {
+    background-color: #f8f9fa;
+    padding: 20px;
+    border-radius: 8px;
+    text-align: center;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    border-left: 4px solid var(--primary-color);
+    transition: transform 0.3s ease;
+}
+
+.resumen-card:hover {
+    transform: translateY(-2px);
+}
+
+.resumen-card h3 {
+    color: var(--text-color);
+    font-size: 1rem;
+    margin-bottom: 10px;
+}
+
+.resumen-card p {
+    color: var(--primary-color);
+    font-size: 1.5rem;
+    font-weight: bold;
+    margin: 0;
+}
+
+.sub-kpis {
+    display: flex;
+    justify-content: space-around;
+    margin-top: 10px;
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.meli-card {
+    border-left-color: #fff159; /* Color de Mercado Libre */
+}
+
+.bapro-card {
+    border-left-color: #005eb8; /* Color de Banco Provincia */
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .sub-kpis {
+        flex-direction: column;
+        gap: 5px;
+    }
+}
