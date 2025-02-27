@@ -13,7 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const usernameDisplay = document.getElementById('username-display');
     const limpiarDatosBtn = document.getElementById('limpiarDatosBtn');
     
-
     // File Data Storage
     let factoryData = null;
     let fortalezaData = null;
@@ -43,52 +42,114 @@ document.addEventListener('DOMContentLoaded', () => {
             limpiarDatosBtn.style.display = 'inline-flex';
         }
     }
-    // Initialize IndexedDB
+
+    function createStores(event) {
+        const db = event.target.result;
+        console.log('Creando/actualizando schema de la base de datos');
+        
+        // Crear store de ventas si no existe
+        if (!db.objectStoreNames.contains('ventas')) {
+            const ventasStore = db.createObjectStore('ventas', { 
+                keyPath: 'id',
+                autoIncrement: true 
+            });
+            
+            // Crear índices necesarios
+            ventasStore.createIndex('fecha', 'fecha');
+            ventasStore.createIndex('tienda', 'tienda');
+            ventasStore.createIndex('razonSocial', 'razonSocial');
+            ventasStore.createIndex('Comprobante', 'Comprobante');
+            
+            console.log('Store de ventas creado');
+        }
+        
+        // Crear store de historial si no existe
+        if (!db.objectStoreNames.contains('uploadHistory')) {
+            const historyStore = db.createObjectStore('uploadHistory', { 
+                keyPath: 'id',
+                autoIncrement: true 
+            });
+            
+            historyStore.createIndex('fecha', 'fecha');
+            historyStore.createIndex('razonSocial', 'razonSocial');
+            historyStore.createIndex('registrosNuevos', 'registrosNuevos');
+            historyStore.createIndex('registrosExistentes', 'registrosExistentes');
+            historyStore.createIndex('totalRegistros', 'totalRegistros');
+            historyStore.createIndex('pedidosUnicos', 'pedidosUnicos');
+            
+            console.log('Store de historial creado');
+        }
+    }
+
+    // REEMPLAZAR ESTA FUNCIÓN
+    // Initialize IndexedDB con manejo de versiones
     const initDB = () => {
         return new Promise((resolve, reject) => {
-            const request = indexedDB.open('ventasDB', 2); // Incrementamos la versión
-    
-            request.onerror = (event) => {
-                console.error('Error opening database:', event.target.error);
+            // Primero, intentamos abrir la base de datos sin especificar versión
+            const checkRequest = indexedDB.open('ventasDB');
+            
+            checkRequest.onsuccess = (event) => {
+                const currentVersion = event.target.result.version;
+                // Cerramos esta conexión
+                event.target.result.close();
+                console.log('Versión actual de la base de datos:', currentVersion);
+                
+                // Abrir con la versión actual o incrementada si necesitamos crear stores
+                const openRequest = indexedDB.open('ventasDB', currentVersion);
+                
+                openRequest.onerror = (event) => {
+                    console.error('Error opening database:', event.target.error);
+                    reject(event.target.error);
+                };
+                
+                openRequest.onsuccess = (event) => {
+                    db = event.target.result;
+                    console.log('Base de datos abierta correctamente');
+                    
+                    // Verificar si los stores existen
+                    if (!db.objectStoreNames.contains('ventas') || 
+                        !db.objectStoreNames.contains('uploadHistory')) {
+                        
+                        // Cerrar la conexión actual
+                        db.close();
+                        
+                        // Reabrir con versión incrementada para crear stores
+                        const upgradeRequest = indexedDB.open('ventasDB', currentVersion + 1);
+                        
+                        upgradeRequest.onupgradeneeded = createStores;
+                        
+                        upgradeRequest.onsuccess = (event) => {
+                            db = event.target.result;
+                            console.log('Base de datos actualizada con stores necesarios');
+                            loadUploadHistory();
+                            resolve(db);
+                        };
+                        
+                        upgradeRequest.onerror = (event) => {
+                            console.error('Error al actualizar la base de datos:', event.target.error);
+                            reject(event.target.error);
+                        };
+                    } else {
+                        // Los stores ya existen
+                        loadUploadHistory();
+                        resolve(db);
+                    }
+                };
+                
+                openRequest.onupgradeneeded = createStores;
+            };
+            
+            checkRequest.onerror = (event) => {
+                console.error('Error checking database version:', event.target.error);
                 reject(event.target.error);
             };
-    
-            request.onsuccess = (event) => {
-                db = event.target.result;
-                loadUploadHistory();
-                resolve(db);
-            };
-    
-            request.onupgradeneeded = (event) => {
-                const db = event.target.result;
-                
-                // Crear object store para ventas si no existe
-                if (!db.objectStoreNames.contains('ventas')) {
-                    const ventasStore = db.createObjectStore('ventas', { 
-                        keyPath: 'id',
-                        autoIncrement: true 
-                    });
-                    ventasStore.createIndex('fecha', 'fecha');
-                    ventasStore.createIndex('tienda', 'tienda');
-                    ventasStore.createIndex('razonSocial', 'razonSocial');
-                }
-    
-                // Crear object store para historial si no existe
-                if (!db.objectStoreNames.contains('uploadHistory')) {
-                    const historyStore = db.createObjectStore('uploadHistory', { 
-                        keyPath: 'id',
-                        autoIncrement: true 
-                    });
-                    historyStore.createIndex('fecha', 'fecha');
-                    historyStore.createIndex('razonSocial', 'razonSocial');
-                    historyStore.createIndex('registrosNuevos', 'registrosNuevos');
-                    historyStore.createIndex('registrosExistentes', 'registrosExistentes');
-                    historyStore.createIndex('totalRegistros', 'totalRegistros');
-                    historyStore.createIndex('pedidosUnicos', 'pedidosUnicos');
-                }
-            };
+            
+            // En caso de que sea la primera vez
+            checkRequest.onupgradeneeded = createStores;
         });
     };
+
+
 
     // File Upload Handlers
     const updateFileStatus = (input, statusId) => {
@@ -119,13 +180,22 @@ document.addEventListener('DOMContentLoaded', () => {
             const workbook = XLSX.read(data, { type: 'array' });
             const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
             const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
-
+    
+            console.log(`Archivo cargado: ${file.name}, tipo seleccionado: ${isFactory ? 'Factory' : 'Fortaleza'}`);
+            
+            // Obtener nombres de columnas para depuración
+            const headers = jsonData[0] || [];
+            console.log('Encabezados detectados:', headers);
+    
+            // IMPORTANTE: Respetar la selección del usuario y no intentar validar
             if (isFactory) {
-                factoryData = validateFactoryData(jsonData);
+                factoryData = jsonData;
+                console.log('Archivo asignado como Factory');
             } else {
-                fortalezaData = validateFortalezaData(jsonData);
+                fortalezaData = jsonData;
+                console.log('Archivo asignado como Fortaleza');
             }
-
+    
             checkFilesReady();
         } catch (error) {
             console.error('Error processing file:', error);
@@ -169,180 +239,222 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!data || data.length < 2) {
             throw new Error('El archivo no contiene datos válidos');
         }
-
-        const requiredHeaders = ['Comprobante', 'Fecha', 'Artículo', 'Total', 'Cliente', 'Observaciones', 'Tienda'];
-        const headers = data[0].map(h => h?.trim());
+    
+        const headers = data[0].map(h => h ? String(h).trim().toLowerCase() : '');
         
-        for (const header of requiredHeaders) {
-            if (!headers.includes(header)) {
-                throw new Error(`Falta la columna requerida: ${header}`);
+        // Verificar columnas mínimas necesarias
+        const requiredColumns = ['comprobante', 'tienda'];
+        for (const column of requiredColumns) {
+            if (headers.indexOf(column) === -1) {
+                throw new Error(`Falta la columna requerida: ${column}`);
             }
         }
-
-        const tiendaIndex = headers.indexOf('Tienda');
-        const firstTienda = data[1]?.[tiendaIndex]?.trim();
-        
-        if (firstTienda !== 'SVONLINE') {
-            throw new Error('Este archivo no corresponde a Factory (SVONLINE).');
-        }
-
+    
         return data;
     };
-
+    
     const validateFortalezaData = (data) => {
         if (!data || data.length < 2) {
             throw new Error('El archivo no contiene datos válidos');
         }
-
-        const requiredHeaders = ['Comprobante', 'Fecha', 'Vendedor', 'Artículo', 'Total', 'Cliente', 'Observaciones', 'Tienda'];
-        const headers = data[0].map(h => h?.trim());
+    
+        const headers = data[0].map(h => h ? String(h).trim().toLowerCase() : '');
         
-        for (const header of requiredHeaders) {
-            if (!headers.includes(header)) {
-                throw new Error(`Falta la columna requerida: ${header}`);
+        // Verificar columnas mínimas necesarias
+        const requiredColumns = ['comprobante', 'tienda'];
+        for (const column of requiredColumns) {
+            if (headers.indexOf(column) === -1) {
+                throw new Error(`Falta la columna requerida: ${column}`);
             }
         }
-
-        const tiendaIndex = headers.indexOf('Tienda');
-        const firstTienda = data[1]?.[tiendaIndex]?.trim();
-        
-        if (firstTienda !== 'CHONLINE') {
-            throw new Error('Este archivo no corresponde a Fortaleza (CHONLINE).');
-        }
-
+    
         return data;
     };
 
     // Processing Functions
-    const processFactoryData = async (data) => {
-        const headers = data[0];
-        const rows = data.slice(1);
-        const processedData = [];
+// Asegurar que processFactoryData asigna la razón social correctamente
+// Asegurar que processFactoryData asigna la razón social correctamente
+const processFactoryData = async (data) => {
+    const headers = data[0];
+    const rows = data.slice(1);
+    const processedData = [];
 
-        for (let i = 0; i < rows.length; i++) {
-            const row = rows[i];
-            const progress = (i / rows.length) * 100;
-            updateProgress(progress, 'Factory');
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const progress = (i / rows.length) * 100;
+        updateProgress(progress, 'Factory');
 
-            if (!row.some(cell => cell)) continue;
+        if (!row || !row.some(cell => cell)) continue;
 
-            const rowData = {};
-            headers.forEach((header, index) => {
-                rowData[header.trim()] = row[index];
-            });
+        const rowData = {};
+        headers.forEach((header, index) => {
+            const headerText = header ? header.trim() : '';
+            if (headerText) {
+                rowData[headerText] = row[index];
+            }
+        });
 
-            let tienda;
-            const observacion = String(rowData.Observaciones || '');
-            
+        // Verificar Tienda para confirmar que es realmente Factory
+        if (rowData.Tienda) {
+            const tiendaStr = String(rowData.Tienda).toUpperCase();
+            if (!tiendaStr.includes('SVONLINE') && !tiendaStr.includes('SEVEN')) {
+                console.warn(`Tienda no reconocida como Factory: ${tiendaStr}`);
+                // Opcional: saltar este registro si no es Factory
+                // continue;
+            }
+        }
+
+        let tienda;
+        const observacion = String(rowData.Observaciones || '');
+        
+        if (observacion.startsWith('BPR')) {
+            tienda = 'Seven Bapro';
+        } else if (observacion.startsWith('20000')) {
+            tienda = 'Seven Meli';
+        } else {
+            tienda = 'Seven';
+        }
+
+        processedData.push({
+            ...rowData,
+            tienda,
+            razonSocial: 'Factory',  // Siempre asignar la razón social correcta
+            fechaProcesamiento: new Date()
+        });
+    }
+
+    console.log(`Datos Factory procesados: ${processedData.length} registros`);
+    return await saveToIndexedDB(processedData);
+};
+
+// Asegurar que processFortalezaData asigna la razón social correctamente
+const processFortalezaData = async (data) => {
+    const headers = data[0];
+    const rows = data.slice(1);
+    const processedData = [];
+
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const progress = (i / rows.length) * 100;
+        updateProgress(progress, 'Fortaleza');
+
+        if (!row || !row.some(cell => cell)) continue;
+
+        const rowData = {};
+        headers.forEach((header, index) => {
+            const headerText = header ? header.trim() : '';
+            if (headerText) {
+                rowData[headerText] = row[index];
+            }
+        });
+
+        // Verificar Tienda para confirmar que es realmente Fortaleza
+        if (rowData.Tienda) {
+            const tiendaStr = String(rowData.Tienda).toUpperCase();
+            if (!tiendaStr.includes('CHONLINE') && !tiendaStr.includes('CHELSEA') && !tiendaStr.includes('EXIT')) {
+                console.warn(`Tienda no reconocida como Fortaleza: ${tiendaStr}`);
+                // Opcional: saltar este registro si no es Fortaleza
+                // continue;
+            }
+        }
+
+        let tienda;
+        const vendedor = String(rowData.Vendedor || '').trim();
+        const observacion = String(rowData.Observaciones || '');
+
+        if (vendedor === 'EXVTEX') {
+            tienda = 'Exit';
+        } else if (vendedor === 'CHVTEX') {
+            tienda = 'Chelsea';
+        } else if (!vendedor) {
             if (observacion.startsWith('BPR')) {
-                tienda = 'Seven Bapro';
+                tienda = 'Chelsea Bapro';
             } else if (observacion.startsWith('20000')) {
-                tienda = 'Seven Meli';
+                tienda = 'Chelsea Meli';
             } else {
-                tienda = 'Seven';
-            }
-
-            if (!rowData['Descrip. familia']) continue;
-
-            processedData.push({
-                ...rowData,
-                tienda,
-                razonSocial: 'Factory',
-                fechaProcesamiento: new Date()
-            });
-        }
-
-        return await saveToIndexedDB(processedData);
-    };
-
-    const processFortalezaData = async (data) => {
-        const headers = data[0];
-        const rows = data.slice(1);
-        const processedData = [];
-
-        for (let i = 0; i < rows.length; i++) {
-            const row = rows[i];
-            const progress = (i / rows.length) * 100;
-            updateProgress(progress, 'Fortaleza');
-
-            if (!row.some(cell => cell)) continue;
-
-            const rowData = {};
-            headers.forEach((header, index) => {
-                rowData[header.trim()] = row[index];
-            });
-
-            let tienda;
-            const vendedor = String(rowData.Vendedor || '').trim();
-            const observacion = String(rowData.Observaciones || '');
-
-            if (vendedor === 'EXVTEX') {
-                tienda = 'Exit';
-            } else if (vendedor === 'CHVTEX') {
                 tienda = 'Chelsea';
-            } else if (!vendedor) {
-                if (observacion.startsWith('BPR')) {
-                    tienda = 'Chelsea Bapro';
-                } else if (observacion.startsWith('20000')) {
-                    tienda = 'Chelsea Meli';
-                }
             }
-
-            if (!rowData['Descrip. familia']) continue;
-
-            processedData.push({
-                ...rowData,
-                tienda,
-                razonSocial: 'Fortaleza',
-                fechaProcesamiento: new Date()
-            });
+        } else {
+            tienda = 'Chelsea';
         }
 
-        return await saveToIndexedDB(processedData);
-    };
+        processedData.push({
+            ...rowData,
+            tienda,
+            razonSocial: 'Fortaleza',  // Siempre asignar la razón social correcta
+            fechaProcesamiento: new Date()
+        });
+    }
 
-    const procesarArchivos = async () => {
-        try {
-            procesarBtn.disabled = true;
-            processingStatus.textContent = 'Iniciando procesamiento...';
-            progressContainer.style.display = 'block';
-            progressFill.style.width = '0%';
+    console.log(`Datos Fortaleza procesados: ${processedData.length} registros`);
+    return await saveToIndexedDB(processedData);
+};
 
-            let estadisticas;
-            
-            if (factoryData) {
-                estadisticas = await processFactoryData(factoryData);
+const procesarArchivos = async () => {
+    try {
+        procesarBtn.disabled = true;
+        processingStatus.textContent = 'Iniciando procesamiento...';
+        progressContainer.style.display = 'block';
+        progressFill.style.width = '0%';
+
+        let estadisticasFactory = null;
+        let estadisticasFortaleza = null;
+        
+        // Procesar Factory si hay datos
+        if (factoryData) {
+            console.log('Procesando datos de Factory...');
+            estadisticasFactory = await processFactoryData(factoryData);
+            if (estadisticasFactory) {
+                await updateUploadHistory({
+                    ...estadisticasFactory,
+                    razonSocial: 'Factory'
+                });
             }
-
-            if (fortalezaData) {
-                estadisticas = await processFortalezaData(fortalezaData);
-            }
-
-            await updateUploadHistory(estadisticas);
-            
-            processingStatus.textContent = 'Procesamiento completado exitosamente';
-            progressContainer.style.display = 'none';
-            
-            factoryFileInput.value = '';
-            fortalezaFileInput.value = '';
-            document.getElementById('factoryStatus').classList.remove('active');
-            document.getElementById('fortalezaStatus').classList.remove('active');
-            
-            checkFilesReady();
-
-        } catch (error) {
-            console.error('Error en el procesamiento:', error);
-            processingStatus.textContent = `Error: ${error.message}`;
-            procesarBtn.disabled = false;
-            progressContainer.style.display = 'none';
         }
-    };
 
-    // IndexedDB Operations
+        // Procesar Fortaleza si hay datos
+        if (fortalezaData) {
+            console.log('Procesando datos de Fortaleza...');
+            estadisticasFortaleza = await processFortalezaData(fortalezaData);
+            if (estadisticasFortaleza) {
+                await updateUploadHistory({
+                    ...estadisticasFortaleza,
+                    razonSocial: 'Fortaleza'
+                });
+            }
+        }
+
+        processingStatus.textContent = 'Procesamiento completado exitosamente';
+        progressContainer.style.display = 'none';
+        
+        // Limpiar los inputs y resetear el estado
+        factoryFileInput.value = '';
+        fortalezaFileInput.value = '';
+        document.getElementById('factoryStatus').classList.remove('active');
+        document.getElementById('fortalezaStatus').classList.remove('active');
+        factoryData = null;
+        fortalezaData = null;
+        
+        checkFilesReady();
+
+    } catch (error) {
+        console.error('Error en el procesamiento:', error);
+        processingStatus.textContent = `Error: ${error.message}`;
+        procesarBtn.disabled = false;
+        progressContainer.style.display = 'none';
+    }
+};
+
     const saveToIndexedDB = async (data) => {
         return new Promise((resolve, reject) => {
+            if (!db) {
+                console.error('La base de datos no está inicializada');
+                reject(new Error('Database not initialized'));
+                return;
+            }
+            
             try {
-                const transaction = db.transaction(['ventas', 'uploadHistory'], 'readwrite');
+                const transaction = db.transaction(['ventas'], 'readwrite');
                 const ventasStore = transaction.objectStore('ventas');
                 
                 const estadisticas = {
@@ -351,23 +463,113 @@ document.addEventListener('DOMContentLoaded', () => {
                     totalRegistros: data.length,
                     pedidosUnicos: new Set()
                 };
-    
-                data.forEach(item => {
-                    const addRequest = ventasStore.add(item);
-                    addRequest.onsuccess = () => {
-                        estadisticas.registrosNuevos++;
-                        estadisticas.pedidosUnicos.add(item.Observaciones);
-                    };
-                });
-    
-                transaction.oncomplete = () => {
-                    resolve(estadisticas);
+                
+                // Determinar la razón social de este conjunto de datos
+                const currentRazonSocial = data[0]?.razonSocial || 
+                    (data[0]?.Tienda && String(data[0].Tienda).includes('SVONLINE') ? 'Factory' : 'Fortaleza');
+                
+                console.log(`Procesando datos de: ${currentRazonSocial}`);
+                
+                // Obtener todos los registros existentes
+                const getAllRequest = ventasStore.getAll();
+                
+                getAllRequest.onsuccess = () => {
+                    const existingRecords = getAllRequest.result;
+                    console.log(`Total de registros existentes: ${existingRecords.length}`);
+                    
+                    // IMPORTANTE: Filtrar solo registros de la MISMA razón social
+                    const recordsOfSameType = existingRecords.filter(record => 
+                        record && record.razonSocial === currentRazonSocial
+                    );
+                    
+                    console.log(`Registros con la misma razón social (${currentRazonSocial}): ${recordsOfSameType.length}`);
+                    
+                    // Crear conjunto de claves únicas para búsqueda rápida
+                    const existingKeys = new Set();
+                    recordsOfSameType.forEach(record => {
+                        if (record && record.Comprobante && record.tienda) {
+                            // La clave debe incluir la razón social
+                            const key = `${record.Comprobante}-${record.tienda}-${record.razonSocial}`;
+                            existingKeys.add(key);
+                        }
+                    });
+                    
+                    console.log(`Claves únicas existentes: ${existingKeys.size}`);
+                    
+                    let processedCount = 0;
+                    
+                    // Procesar cada registro de datos
+                    data.forEach(item => {
+                        // Asegurarse de que este ítem tiene la razón social correcta
+                        if (item.Tienda && typeof item.Tienda === 'string') {
+                            if (item.Tienda.includes('SVONLINE') || item.Tienda.includes('SEVEN')) {
+                                item.razonSocial = 'Factory';
+                            } else if (item.Tienda.includes('CHONLINE') || item.Tienda.includes('CHELSEA') || item.Tienda.includes('EXIT')) {
+                                item.razonSocial = 'Fortaleza';
+                            }
+                        }
+                        
+                        if (!item || !item.Comprobante || !item.tienda) {
+                            console.warn('Registro inválido:', item);
+                            processedCount++;
+                            checkComplete();
+                            return;
+                        }
+                        
+                        // Verificar si ya existe un registro con la misma clave
+                        // IMPORTANTE: Incluir razón social en la clave de verificación
+                        const key = `${item.Comprobante}-${item.tienda}-${item.razonSocial}`;
+                        const isDuplicate = existingKeys.has(key);
+                        
+                        console.log(`Verificando ${key}: Duplicado=${isDuplicate}`);
+                        
+                        if (!isDuplicate) {
+                            // No es duplicado, añadir
+                            const addRequest = ventasStore.add(item);
+                            
+                            addRequest.onsuccess = () => {
+                                estadisticas.registrosNuevos++;
+                                existingKeys.add(key); // Actualizar conjunto para detección futura
+                                if (item.Observaciones) {
+                                    estadisticas.pedidosUnicos.add(item.Observaciones);
+                                }
+                                processedCount++;
+                                checkComplete();
+                            };
+                            
+                            addRequest.onerror = (event) => {
+                                console.error('Error al añadir registro:', event.target.error);
+                                estadisticas.registrosExistentes++;
+                                processedCount++;
+                                checkComplete();
+                            };
+                        } else {
+                            // Es duplicado, contar
+                            estadisticas.registrosExistentes++;
+                            processedCount++;
+                            checkComplete();
+                        }
+                    });
+                    
+                    function checkComplete() {
+                        if (processedCount >= data.length) {
+                            console.log('Procesamiento completado:', estadisticas);
+                            resolve(estadisticas);
+                        }
+                    }
                 };
-    
-                transaction.onerror = (error) => {
-                    reject(error);
+                
+                getAllRequest.onerror = (event) => {
+                    console.error('Error al obtener registros existentes:', event.target.error);
+                    reject(event.target.error);
+                };
+                
+                transaction.onerror = (event) => {
+                    console.error('Error en la transacción:', event.target.error);
+                    reject(event.target.error);
                 };
             } catch (error) {
+                console.error('Error general en saveToIndexedDB:', error);
                 reject(error);
             }
         });
@@ -376,16 +578,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const updateUploadHistory = async (estadisticas) => {
         const transaction = db.transaction(['uploadHistory'], 'readwrite');
         const store = transaction.objectStore('uploadHistory');
-
+    
         const historyEntry = {
             fecha: new Date(),
-            razonSocial: factoryData ? 'Factory' : 'Fortaleza',
+            razonSocial: estadisticas.razonSocial, // Usar la razón social proporcionada
             totalRegistros: estadisticas.totalRegistros,
             registrosNuevos: estadisticas.registrosNuevos,
             registrosExistentes: estadisticas.registrosExistentes,
             pedidosUnicos: estadisticas.pedidosUnicos.size
         };
-
+    
         try {
             await store.add(historyEntry);
             await loadUploadHistory();
@@ -399,8 +601,15 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Base de datos no inicializada');
             return;
         }
-    
+        
         try {
+            // Verificar si el object store existe
+            if (!db.objectStoreNames.contains('uploadHistory')) {
+                console.warn('El store uploadHistory no existe todavía');
+                updateHistoryUI([]);
+                return;
+            }
+            
             const transaction = db.transaction(['uploadHistory'], 'readonly');
             const store = transaction.objectStore('uploadHistory');
             const request = store.getAll();
@@ -477,268 +686,30 @@ document.addEventListener('DOMContentLoaded', () => {
     procesarBtn.addEventListener('click', procesarArchivos);
     limpiarDatosBtn?.addEventListener('click', limpiarDatos);
 
-    // Inicialización
-    checkSession();
-    initDB();
-});
-
-// Añadir un nuevo elemento en la UI para subir archivos de logística
-function agregarUICargaLogistica() {
-    // Crear una nueva sección después de la carga de ventas
-    const contentWrapper = document.querySelector('.content-wrapper');
-    if (!contentWrapper) return;
-    
-    const logisticaSection = document.createElement('div');
-    logisticaSection.className = 'upload-section logistica-section';
-    logisticaSection.style.marginTop = '20px';
-    
-    logisticaSection.innerHTML = `
-        <div class="upload-container">
-            <div class="file-upload-card">
-                <div class="card-icon">
-                    <i class="fas fa-truck"></i>
-                </div>
-                <h2>Datos de Logística (VTEX)</h2>
-                <div class="upload-area">
-                    <input type="file" id="logisticaFile" accept=".xlsx,.xls,.csv">
-                    <p class="upload-text">Arrastra tu archivo aquí o haz clic para seleccionar</p>
-                </div>
-                <div class="file-status" id="logisticaStatus">
-                    <i class="fas fa-check-circle"></i>
-                    Archivo cargado: <span class="file-name"></span>
-                </div>
-            </div>
-            
-            <div class="info-section">
-                <h3><i class="fas fa-info-circle"></i>Datos de Logística</h3>
-                <div class="file-requirements">
-                    <ul class="requirements-list">
-                        <li>Formato: Excel (.xlsx, .xls) o CSV (.csv)</li>
-                        <li>Debe contener información de envíos de VTEX</li>
-                        <li>Campos requeridos: carrier, region, deliveryTime, shippingCost</li>
-                        <li>Sin encabezados vacíos o datos faltantes</li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    // Añadir después del contenido existente
-    contentWrapper.appendChild(logisticaSection);
-    
-    // Agregar event listener para el input de archivo
-    const logisticaFileInput = document.getElementById('logisticaFile');
-    if (logisticaFileInput) {
-        logisticaFileInput.addEventListener('change', manejarSeleccionArchivoLogistica);
-    }
-    
-    // Añadir botón para procesar datos de logística
-    const actionButtons = document.querySelector('.action-buttons');
-    if (actionButtons) {
-        const procesarLogisticaBtn = document.createElement('button');
-        procesarLogisticaBtn.id = 'procesarLogisticaBtn';
-        procesarLogisticaBtn.className = 'process-btn';
-        procesarLogisticaBtn.disabled = true;
-        procesarLogisticaBtn.innerHTML = `
-            <i class="fas fa-truck"></i>
-            Procesar Datos de Logística
-        `;
-        procesarLogisticaBtn.addEventListener('click', procesarDatosLogistica);
-        actionButtons.appendChild(procesarLogisticaBtn);
-    }
-}
-
-// Variables para datos de logística
-let logisticaData = null;
-
-// Manejar selección de archivo de logística
-function manejarSeleccionArchivoLogistica(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    const logisticaStatus = document.getElementById('logisticaStatus');
-    const procesarLogisticaBtn = document.getElementById('procesarLogisticaBtn');
-    
-    // Mostrar nombre del archivo
-    if (logisticaStatus) {
-        const fileNameSpan = logisticaStatus.querySelector('.file-name');
-        if (fileNameSpan) {
-            fileNameSpan.textContent = file.name;
-            logisticaStatus.classList.add('active');
-        }
-    }
-    
-    // Leer archivo
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        try {
-            const data = e.target.result;
-            const workbook = XLSX.read(data, { type: 'binary' });
-            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-            const jsonData = XLSX.utils.sheet_to_json(firstSheet);
-            
-            logisticaData = jsonData;
-            
-            if (procesarLogisticaBtn) {
-                procesarLogisticaBtn.disabled = false;
-            }
-            
-        } catch (error) {
-            console.error('Error al procesar archivo de logística:', error);
-            if (processingStatus) {
-                processingStatus.textContent = `Error: ${error.message}`;
-            }
-        }
-    };
-    
-    reader.readAsBinaryString(file);
-}
-
-// Procesar datos de logística
-async function procesarDatosLogistica() {
-    if (!logisticaData || logisticaData.length === 0) {
-        alert('No hay datos de logística para procesar');
-        return;
-    }
-    
-    try {
-        const procesarLogisticaBtn = document.getElementById('procesarLogisticaBtn');
-        const processingStatus = document.getElementById('processingStatus');
+    // Setup sidebar toggle if utils.js is loaded
+    if (window.utils && typeof window.utils.setupSidebar === 'function') {
+        window.utils.setupSidebar();
+    } else {
+        // Configurar sidebar manualmente si es necesario
+        const sidebar = document.getElementById('sidebar');
+        const toggleBtn = document.getElementById('toggle-sidebar');
+        const mainContent = document.getElementById('main-content');
+        const footer = document.querySelector('.footer');
         
-        if (procesarLogisticaBtn) {
-            procesarLogisticaBtn.disabled = true;
-        }
-        
-        if (processingStatus) {
-            processingStatus.textContent = 'Procesando datos de logística...';
-        }
-        
-        // Guardar en IndexedDB
-        await guardarDatosLogistica(logisticaData);
-        
-        if (processingStatus) {
-            processingStatus.textContent = 'Datos de logística procesados exitosamente';
-        }
-        
-        // Limpiar
-        document.getElementById('logisticaFile').value = '';
-        document.getElementById('logisticaStatus').classList.remove('active');
-        logisticaData = null;
-        
-        if (procesarLogisticaBtn) {
-            procesarLogisticaBtn.disabled = true;
-        }
-        
-    } catch (error) {
-        console.error('Error al procesar datos de logística:', error);
-        if (processingStatus) {
-            processingStatus.textContent = `Error: ${error.message}`;
-        }
-        if (procesarLogisticaBtn) {
-            procesarLogisticaBtn.disabled = false;
-        }
-    }
-}
-
-// Guardar datos de logística en IndexedDB
-async function guardarDatosLogistica(datos) {
-    return new Promise((resolve, reject) => {
-        try {
-            const transaction = db.transaction(['logistica'], 'readwrite');
-            const store = transaction.objectStore('logistica');
-            
-            // Limpiar datos existentes
-            store.clear();
-            
-            // Añadir fecha de procesamiento a cada registro
-            const datosConFecha = datos.map(item => ({
-                ...item,
-                fechaProcesamiento: new Date()
-            }));
-            
-            // Guardar nuevos datos
-            datosConFecha.forEach(item => {
-                store.add(item);
+        if (sidebar && toggleBtn) {
+            toggleBtn.addEventListener('click', () => {
+                sidebar.classList.toggle('collapsed');
+                if (mainContent) mainContent.classList.toggle('expanded');
+                if (footer) footer.classList.toggle('expanded');
             });
-            
-            transaction.oncomplete = () => {
-                resolve({
-                    totalRegistros: datos.length
-                });
-            };
-            
-            transaction.onerror = (error) => {
-                reject(error);
-            };
-            
-        } catch (error) {
-            reject(error);
+        }
+    }
+
+    checkSession();
+    initDB().catch(error => {
+        console.error('Error al inicializar la base de datos:', error);
+        if (processingStatus) {
+            processingStatus.textContent = `Error al inicializar la base de datos. Por favor, recarga la página.`;
         }
     });
-}
-
-// Modificar la función initDB para incluir el almacén de logística
-const initDB = () => {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open('ventasDB', 3); // Incrementamos a versión 3
-        
-        request.onerror = (event) => {
-            console.error('Error opening database:', event.target.error);
-            reject(event.target.error);
-        };
-        
-        request.onsuccess = (event) => {
-            db = event.target.result;
-            loadUploadHistory();
-            resolve(db);
-        };
-        
-        request.onupgradeneeded = (event) => {
-            const db = event.target.result;
-            
-            // Crear almacenes existentes si no existen
-            if (!db.objectStoreNames.contains('ventas')) {
-                const ventasStore = db.createObjectStore('ventas', { 
-                    keyPath: 'id',
-                    autoIncrement: true 
-                });
-                ventasStore.createIndex('fecha', 'fecha');
-                ventasStore.createIndex('tienda', 'tienda');
-                ventasStore.createIndex('razonSocial', 'razonSocial');
-            }
-            
-            if (!db.objectStoreNames.contains('uploadHistory')) {
-                const historyStore = db.createObjectStore('uploadHistory', { 
-                    keyPath: 'id',
-                    autoIncrement: true 
-                });
-                historyStore.createIndex('fecha', 'fecha');
-                historyStore.createIndex('razonSocial', 'razonSocial');
-                historyStore.createIndex('registrosNuevos', 'registrosNuevos');
-                historyStore.createIndex('registrosExistentes', 'registrosExistentes');
-                historyStore.createIndex('totalRegistros', 'totalRegistros');
-                historyStore.createIndex('pedidosUnicos', 'pedidosUnicos');
-            }
-            
-            // Añadir store para datos de logística
-            if (!db.objectStoreNames.contains('logistica')) {
-                const logisticaStore = db.createObjectStore('logistica', {
-                    keyPath: 'id',
-                    autoIncrement: true
-                });
-                logisticaStore.createIndex('carrier', 'carrier');
-                logisticaStore.createIndex('region', 'region');
-                logisticaStore.createIndex('deliveryTime', 'deliveryTime');
-                logisticaStore.createIndex('fechaProcesamiento', 'fechaProcesamiento');
-            }
-        };
-    });
-};
-
-// Llamada para inicializar la UI de logística
-document.addEventListener('DOMContentLoaded', () => {
-    // Código existente...
-    
-    // Añadir UI para carga de logística
-    setTimeout(agregarUICargaLogistica, 500);
 });

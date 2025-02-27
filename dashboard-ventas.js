@@ -377,36 +377,15 @@ function setupEventListeners() {
 
 async function aplicarFiltros() {
     try {
-        // Deshabilitar el botón mientras se procesan los filtros
         const aplicarFiltrosBtn = document.getElementById('aplicarFiltros');
         aplicarFiltrosBtn.disabled = true;
 
-        // Actualizar los filtros
-        await actualizarFiltros();
+        await actualizarFiltros(); // Esto ahora manejará la actualización de todos los gráficos
 
-        // Obtener los datos filtrados
-        const datos = await getDatosFiltrados();
-
-        // Actualizar todas las visualizaciones
-        await Promise.all([
-            actualizarKPIs(datos),
-            crearGraficoTendencias(datos),
-            crearGraficoMarcas(datos),
-            crearGraficoCategorias(datos),
-            crearGraficoEdades(datos),
-            crearGraficoHorarios(datos),
-            crearGraficoMarketplace(datos),
-            crearGraficoLogistica(datos, true), // Pasamos true para usar datos de prueba
-            crearGraficoTendenciaCompra(datos)
-        ]);
-
-        // Habilitar el botón nuevamente
         aplicarFiltrosBtn.disabled = false;
-
     } catch (error) {
         console.error('Error al aplicar filtros:', error);
         mostrarError('Error al actualizar el dashboard');
-        // Asegurarse de que el botón se habilite incluso si hay un error
         document.getElementById('aplicarFiltros').disabled = false;
     }
 }
@@ -428,50 +407,48 @@ function hayFiltrosActivos() {
 
 // Inicializar IndexedDB
 async function initDB() {
-    return new Promise((resolve, reject) => {
-        console.log('Inicializando base de datos...');
-        const request = indexedDB.open('ventasDB', 2); // Actualizamos a versión 2
+    console.log('Inicializando base de datos...');
+    try {
+        // Usar la función de utils.js si está disponible
+        if (window.utils && window.utils.openDatabaseWithCorrectVersion) {
+            db = await window.utils.openDatabaseWithCorrectVersion('ventasDB');
+            return db;
+        }
         
-        request.onerror = (event) => {
-            console.error('Error al abrir la base de datos:', event.target.error);
-            reject(event.target.error);
-        };
-
-        request.onsuccess = (event) => {
-            console.log('Base de datos inicializada correctamente');
-            db = event.target.result;
-            resolve(db);
-        };
-
-        request.onupgradeneeded = (event) => {
-            const db = event.target.result;
+        // Si utils.js no está disponible, usar nuestro propio código
+        return new Promise((resolve, reject) => {
+            // Primero detectar la versión actual
+            const checkRequest = indexedDB.open('ventasDB');
             
-            // Crear object store para ventas si no existe
-            if (!db.objectStoreNames.contains('ventas')) {
-                const ventasStore = db.createObjectStore('ventas', { 
-                    keyPath: 'id',
-                    autoIncrement: true 
-                });
-                ventasStore.createIndex('fecha', 'fecha');
-                ventasStore.createIndex('tienda', 'tienda');
-                ventasStore.createIndex('razonSocial', 'razonSocial');
-            }
-
-            // Crear object store para historial si no existe
-            if (!db.objectStoreNames.contains('uploadHistory')) {
-                const historyStore = db.createObjectStore('uploadHistory', { 
-                    keyPath: 'id',
-                    autoIncrement: true 
-                });
-                historyStore.createIndex('fecha', 'fecha');
-                historyStore.createIndex('razonSocial', 'razonSocial');
-                historyStore.createIndex('registrosNuevos', 'registrosNuevos');
-                historyStore.createIndex('registrosExistentes', 'registrosExistentes');
-                historyStore.createIndex('totalRegistros', 'totalRegistros');
-                historyStore.createIndex('pedidosUnicos', 'pedidosUnicos');
-            }
-        };
-    });
+            checkRequest.onsuccess = (event) => {
+                const currentVersion = event.target.result.version;
+                event.target.result.close();
+                console.log('Versión actual de la base de datos:', currentVersion);
+                
+                // Ahora abrir con la versión correcta
+                const openRequest = indexedDB.open('ventasDB', currentVersion);
+                
+                openRequest.onsuccess = (evt) => {
+                    db = evt.target.result;
+                    console.log('Base de datos abierta correctamente');
+                    resolve(db);
+                };
+                
+                openRequest.onerror = (evt) => {
+                    console.error('Error al abrir la base de datos:', evt.target.error);
+                    reject(evt.target.error);
+                };
+            };
+            
+            checkRequest.onerror = (event) => {
+                console.error('Error al verificar versión de la base de datos:', event.target.error);
+                reject(event.target.error);
+            };
+        });
+    } catch (error) {
+        console.error('Error al inicializar la base de datos:', error);
+        throw error;
+    }
 }
 
 // Función para crear el gráfico de tendencias
@@ -483,118 +460,137 @@ async function crearGraficoTendencias(datos) {
     
     setupLargeChartContainer(container);
 
-    // Asegurarse de que todos los datos tengan fechas válidas
-    const datosValidos = datos.filter(venta => venta.Fecha != null);
+    // Guardar datos originales si son nuevos
+    if (datos) {
+        container.originalData = datos;
+    } else if (container.originalData) {
+        datos = container.originalData;
+    } else {
+        container.innerHTML = '<div class="no-data">No hay datos disponibles</div>';
+        return;
+    }
+
+    // Función para generar el gráfico con datos filtrados
+    function generarGraficoTendencias(datosFiltrados) {
+        // Asegurarse de que todos los datos tengan fechas válidas
+        const datosValidos = datosFiltrados.filter(venta => venta.Fecha != null);
+        
+        const ventasPorFecha = datosValidos.reduce((acc, venta) => {
+            try {
+                const fechaJS = excelDateToJSDate(venta.Fecha);
+                if (!fechaJS) return acc;
+                
+                const fecha = fechaJS.toISOString().split('T')[0];
+                acc[fecha] = acc[fecha] || { total: 0, cantidad: 0 };
+                acc[fecha].total += parseFloat(venta.Total || 0);
+                acc[fecha].cantidad += parseFloat(venta.Cantidad || 1);
+                return acc;
+            } catch (error) {
+                console.warn('Error procesando fecha:', error);
+                return acc;
+            }
+        }, {});
+
+        const datosOrdenados = Object.entries(ventasPorFecha)
+            .map(([fecha, datos]) => ({
+                fecha,
+                total: datos.total,
+                cantidad: datos.cantidad
+            }))
+            .sort((a, b) => a.fecha.localeCompare(b.fecha));
+
+        if (container.chart) {
+            container.chart.destroy();
+        }
+
+        // Limpiar controles existentes antes de añadir nuevos
+        const controlsContainer = container.parentElement?.querySelector('.chart-controls');
+        if (controlsContainer) {
+            controlsContainer.remove();
+        }
+
+        const options = {
+            ...baseChartConfig,
+            plugins: {
+                ...baseChartConfig.plugins,
+                title: {
+                    display: false,
+                    text: 'Tendencia de Ventas',
+                    font: { size: 16, weight: 'bold' }
+                },
+                legend: {
+                    position: 'top',
+                    align: 'end',
+                    labels: {
+                        usePointStyle: true,
+                        padding: 20
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    type: 'linear',
+                    position: 'left',
+                    title: {
+                        display: false,
+                        text: 'Ventas ($)'
+                    },
+                    ticks: {
+                        callback: value => formatoPeso(value)
+                    }
+                },
+                y1: {
+                    type: 'linear',
+                    position: 'right',
+                    title: {
+                        display: false,
+                        text: 'Cantidad'
+                    },
+                    grid: {
+                        drawOnChartArea: false
+                    },
+                    ticks: {
+                        callback: value => value.toLocaleString()
+                    }
+                }
+            }
+        };
+
+        container.chart = new Chart(container, {
+            type: 'line',
+            data: {
+                labels: datosOrdenados.map(d => formatearFecha(d.fecha)),
+                datasets: [
+                    {
+                        label: 'Ventas ($)',
+                        data: datosOrdenados.map(d => Math.round(d.total)),
+                        borderColor: '#4CAF50',
+                        backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                        yAxisID: 'y',
+                        fill: true
+                    },
+                    {
+                        label: 'Cantidad',
+                        data: datosOrdenados.map(d => d.cantidad),
+                        borderColor: '#2196F3',
+                        backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                        yAxisID: 'y1',
+                        fill: true,
+                        isCantidad: true
+                    }
+                ]
+            },
+            options: options
+        });
+
+        addValueAndGridToggles(container);
+    }
     
-    const ventasPorFecha = datosValidos.reduce((acc, venta) => {
-        try {
-            const fechaJS = excelDateToJSDate(venta.Fecha);
-            if (!fechaJS) return acc;
-            
-            const fecha = fechaJS.toISOString().split('T')[0];
-            acc[fecha] = acc[fecha] || { total: 0, cantidad: 0 };
-            acc[fecha].total += parseFloat(venta.Total || 0);
-            acc[fecha].cantidad += parseFloat(venta.Cantidad || 1);
-            return acc;
-        } catch (error) {
-            console.warn('Error procesando fecha:', error);
-            return acc;
-        }
-    }, {});
-
-    const datosOrdenados = Object.entries(ventasPorFecha)
-        .map(([fecha, datos]) => ({
-            fecha,
-            total: datos.total,
-            cantidad: datos.cantidad
-        }))
-        .sort((a, b) => a.fecha.localeCompare(b.fecha));
-
-    if (container.chart) {
-        container.chart.destroy();
-    }
-
-    // Limpiar controles existentes antes de agregar nuevos
-    const controlsContainer = container.parentElement?.querySelector('.chart-controls');
-    if (controlsContainer) {
-        controlsContainer.remove();
-    }
-
-    const options = {
-        ...baseChartConfig,
-        plugins: {
-            ...baseChartConfig.plugins,
-            title: {
-                display: false,
-                text: 'Tendencia de Ventas',
-                font: { size: 16, weight: 'bold' }
-            },
-            legend: {
-                position: 'top',
-                align: 'end',
-                labels: {
-                    usePointStyle: true,
-                    padding: 20
-                }
-            }
-        },
-        scales: {
-            y: {
-                type: 'linear',
-                position: 'left',
-                title: {
-                    display: false,
-                    text: 'Ventas ($)'
-                },
-                ticks: {
-                    callback: value => formatoPeso(value)
-                }
-            },
-            y1: {
-                type: 'linear',
-                position: 'right',
-                title: {
-                    display: false,
-                    text: 'Cantidad'
-                },
-                grid: {
-                    drawOnChartArea: false
-                },
-                ticks: {
-                    callback: value => value.toLocaleString()
-                }
-            }
-        }
-    };
-
-    container.chart = new Chart(container, {
-        type: 'line',
-        data: {
-            labels: datosOrdenados.map(d => formatearFecha(d.fecha)),
-            datasets: [
-                {
-                    label: 'Ventas ($)',
-                    data: datosOrdenados.map(d => Math.round(d.total)),
-                    borderColor: '#4CAF50',
-                    backgroundColor: 'rgba(76, 175, 80, 0.1)',
-                    yAxisID: 'y',
-                    fill: true
-                },
-                {
-                    label: 'Cantidad',
-                    data: datosOrdenados.map(d => d.cantidad),
-                    borderColor: '#2196F3',
-                    backgroundColor: 'rgba(33, 150, 243, 0.1)',
-                    yAxisID: 'y1',
-                    fill: true,
-                    isCantidad: true
-                }
-            ]
-        },
-        options: options
-    });
-
-    addValueAndGridToggles(container);
+    // Añadir filtro de tienda
+    añadirFiltroTienda(container, datos, generarGraficoTendencias);
+    
+    // Generar con datos completos inicialmente
+    generarGraficoTendencias(datos);
 }
 
 // Función para actualizar KPIs
@@ -793,99 +789,167 @@ const marcasNombres = {
     // Agregar más mapeos según sea necesario
 };
 
+function obtenerTiendasUnicas(datos) {
+    return [...new Set(datos.map(venta => venta.tienda).filter(tienda => tienda))];
+}
+
+// Función genérica para añadir filtro de tienda a gráficos
+function añadirFiltroTienda(container, datos, funcionGeneracion) {
+    // Eliminar filtros previos si existen
+    const filtrosPrevios = container.parentElement.querySelectorAll('.filtro-tienda-container');
+    filtrosPrevios.forEach(filtro => filtro.remove());
+
+    // Crear contenedor de filtro
+    const filtroContainer = document.createElement('div');
+    filtroContainer.className = 'filtro-tienda-container';
+    filtroContainer.style.cssText = `
+        display: flex;
+        justify-content: center;
+        margin-bottom: 10px;
+    `;
+
+    // Crear select de tiendas
+    const selectTienda = document.createElement('select');
+    selectTienda.className = 'filtro-tienda';
+    selectTienda.style.cssText = `
+        padding: 5px;
+        margin-right: 10px;
+        border-radius: 4px;
+        border: 1px solid #ccc;
+    `;
+
+    // Añadir opción "Todas las Tiendas"
+    const optionTodo = document.createElement('option');
+    optionTodo.value = 'Todo';
+    optionTodo.textContent = 'Todas las Tiendas';
+    selectTienda.appendChild(optionTodo);
+
+    // Añadir tiendas únicas
+    const tiendasUnicas = obtenerTiendasUnicas(datos);
+    tiendasUnicas.forEach(tienda => {
+        const option = document.createElement('option');
+        option.value = tienda;
+        option.textContent = tienda;
+        selectTienda.appendChild(option);
+    });
+
+    // Añadir evento de cambio
+    selectTienda.addEventListener('change', () => {
+        const tiendaSeleccionada = selectTienda.value;
+        const datosFiltrados = tiendaSeleccionada === 'Todo' 
+            ? datos 
+            : datos.filter(venta => venta.tienda === tiendaSeleccionada);
+        
+        // Regenerar gráfico con datos filtrados
+        funcionGeneracion(datosFiltrados);
+    });
+
+    // Añadir select al contenedor
+    filtroContainer.appendChild(selectTienda);
+
+    // Insertar antes del gráfico
+    container.parentElement.insertBefore(filtroContainer, container);
+}
+
 async function crearGraficoMarcas(datos) {
     const container = document.getElementById('graficoMarcas');
     if (!container) return;
 
     setupChartContainer(container);
-    
-    // Aumentar altura significativamente
     container.style.height = '700px';
     container.style.maxWidth = '100%';
     container.style.width = '100%';
-    container.style.padding = '0'; // Añadir esto
-    
-    const ventasPorMarca = datos.reduce((acc, venta) => {
-        // Usar el diccionario de nombres o el nombre original si no existe en el diccionario
-        const marca = marcasNombres[venta.Proveedor] || venta.Proveedor || 'Sin Marca';
-        if (!acc[marca]) {
-            acc[marca] = { ventas: 0, cantidad: 0 };
+    container.style.padding = '0';
+
+    // Función para generar gráfico de marcas
+    function generarGraficoMarcas(datosFiltrados) {
+        const ventasPorMarca = datosFiltrados.reduce((acc, venta) => {
+            const marca = marcasNombres[venta.Proveedor] || venta.Proveedor || 'Sin Marca';
+            if (!acc[marca]) {
+                acc[marca] = { ventas: 0, cantidad: 0 };
+            }
+            acc[marca].ventas += parseFloat(venta.Total || 0);
+            acc[marca].cantidad += parseFloat(venta.Cantidad || 1);
+            return acc;
+        }, {});
+
+        const topMarcas = Object.entries(ventasPorMarca)
+            .sort(([,a], [,b]) => b.ventas - a.ventas)
+            .slice(0, 10);
+
+        if (container.chart) {
+            container.chart.destroy();
         }
-        acc[marca].ventas += parseFloat(venta.Total || 0);
-        acc[marca].cantidad += parseFloat(venta.Cantidad || 1);
-        return acc;
-    }, {});
 
-    const topMarcas = Object.entries(ventasPorMarca)
-        .sort(([,a], [,b]) => b.ventas - a.ventas)
-        .slice(0, 10);
-
-    if (container.chart) {
-        container.chart.destroy();
-    }
-
-    const chartConfig = {
-        ...baseChartConfig,
-        scales: {
-            x: {
-                grid: { display: false },
-                ticks: {
-                    maxRotation: 45,
-                    minRotation: 45,
-                    padding: 10,
-                    font: { size: 10 }
-                }
-            },
-            y: {
-                type: 'linear',
-                position: 'left',
-                ticks: {
-                    callback: value => formatoPeso(value)
-                }
-            },
-            y1: {
-                type: 'linear',
-                position: 'right',
-                grid: {
-                    drawOnChartArea: false
+        const chartConfig = {
+            ...baseChartConfig,
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 45,
+                        padding: 10,
+                        font: { size: 10 }
+                    }
                 },
-                ticks: {
-                    callback: value => value.toLocaleString()
+                y: {
+                    type: 'linear',
+                    position: 'left',
+                    ticks: {
+                        callback: value => formatoPeso(value)
+                    }
+                },
+                y1: {
+                    type: 'linear',
+                    position: 'right',
+                    grid: {
+                        drawOnChartArea: false
+                    },
+                    ticks: {
+                        callback: value => value.toLocaleString()
+                    }
                 }
             }
-        }
-    };
+        };
 
-    container.chart = new Chart(container, {
-        type: 'bar',
-        data: {
-            labels: topMarcas.map(([marca]) => marca),
-            datasets: [
-                {
-                    label: 'Ventas',
-                    data: topMarcas.map(([,data]) => Math.round(data.ventas)),
-                    backgroundColor: '#4CAF50',
-                    order: 1,
-                    barPercentage: 0.7,
-                    categoryPercentage: 0.8
-                },
-                {
-                    label: 'Cantidad',
-                    data: topMarcas.map(([,data]) => data.cantidad),
-                    type: 'line',
-                    borderColor: '#2196F3',
-                    backgroundColor: 'rgba(33, 150, 243, 0.1)',
-                    yAxisID: 'y1',
-                    order: 0,
-                    isCantidad: true,
-                    tension: 0.4
-                }
-            ]
-        },
-        options: chartConfig
-    });
+        container.chart = new Chart(container, {
+            type: 'bar',
+            data: {
+                labels: topMarcas.map(([marca]) => marca),
+                datasets: [
+                    {
+                        label: 'Ventas',
+                        data: topMarcas.map(([,data]) => Math.round(data.ventas)),
+                        backgroundColor: '#4CAF50',
+                        order: 1,
+                        barPercentage: 0.7,
+                        categoryPercentage: 0.8
+                    },
+                    {
+                        label: 'Cantidad',
+                        data: topMarcas.map(([,data]) => data.cantidad),
+                        type: 'line',
+                        borderColor: '#2196F3',
+                        backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                        yAxisID: 'y1',
+                        order: 0,
+                        isCantidad: true,
+                        tension: 0.4
+                    }
+                ]
+            },
+            options: chartConfig
+        });
 
-    addValueAndGridToggles(container);
+        addValueAndGridToggles(container);
+    }
+
+    // Añadir filtro de tienda
+    añadirFiltroTienda(container, datos, generarGraficoMarcas);
+
+    // Generar gráfico inicial
+    generarGraficoMarcas(datos);
 }
 
 // Función para formatear moneda
@@ -932,7 +996,6 @@ function setupLargeChartContainer(container) {
     `;
 }
 
-// Ajustes específicos por tipo de gráfico
 async function crearGraficoCategorias(datos) {
     const container = document.getElementById('graficoCategorias');
     if (!container) {
@@ -957,210 +1020,219 @@ async function crearGraficoCategorias(datos) {
     setupChartContainer(container);
     container.style.height = '400px';
 
-    // Procesar datos para incluir tanto ventas como cantidad
-    const categoriaData = datos.reduce((acc, venta) => {
-        const categoria = venta['Descrip. familia'] || 'Sin Categoría';
-        if (!acc[categoria]) {
-            acc[categoria] = { ventas: 0, cantidad: 0 };
-        }
-        acc[categoria].ventas += parseFloat(venta.Total || 0);
-        acc[categoria].cantidad += parseFloat(venta.Cantidad || 1);
-        return acc;
-    }, {});
-
-    // Convertir y ordenar por ventas
-    const categorias = Object.entries(categoriaData)
-        .sort(([,a], [,b]) => b.ventas - a.ventas);
-
-    // Asignar colores fijos a cada categoría para mantener consistencia
-    const coloresCategoria = {
-        'CALZADOS': '#4CAF50',      // Verde
-        'INDUMENTARIA': '#2196F3',  // Azul
-        'ACCESORIOS': '#FFC107',    // Amarillo
-        'MEDIAS': '#F44336',        // Rojo
-        'ENVIOS': '#9C27B0',        // Púrpura
-        'Sin Categoría': '#607D8B'  // Gris azulado
-    };
-
-    // Asegurar que todas las categorías tengan un color asignado
-    categorias.forEach(([cat]) => {
-        if (!coloresCategoria[cat]) {
-            // Generar colores para categorías no previstas
-            const coloresDisponibles = [
-                '#00BCD4', '#FF9800', '#795548', '#E91E63', '#009688',
-                '#3F51B5', '#CDDC39', '#673AB7', '#FF5722', '#8BC34A'
-            ];
-            const colorIndex = Object.keys(coloresCategoria).length % coloresDisponibles.length;
-            coloresCategoria[cat] = coloresDisponibles[colorIndex];
-        }
-    });
-
-    // Crear controles solo si no existen
-    let controlDiv = container.parentElement.querySelector('.chart-controls');
-    if (!controlDiv) {
-        controlDiv = document.createElement('div');
-        controlDiv.className = 'chart-controls';
-        controlDiv.style.cssText = `
-            display: flex;
-            justify-content: center;
-            gap: 10px;
-            margin-bottom: 15px;
-            width: 100%;
-        `;
-        container.parentElement.insertBefore(controlDiv, container);
-        
-        // Creamos los botones
-        const views = [
-            { id: 'porcentaje', label: 'Porcentajes', icon: 'fa-percent' },
-            { id: 'ventas', label: 'Ventas ($)', icon: 'fa-dollar-sign' },
-            { id: 'cantidad', label: 'Cantidades', icon: 'fa-box' }
-        ];
-
-        views.forEach(view => {
-            const button = document.createElement('button');
-            button.dataset.view = view.id;
-            button.innerHTML = `<i class="fas ${view.icon}"></i> ${view.label}`;
-            button.style.cssText = `
-                padding: 8px 12px;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 12px;
-                display: flex;
-                align-items: center;
-                gap: 5px;
-                background-color: ${view.id === 'porcentaje' ? '#4CAF50' : '#f1f1f1'};
-                color: ${view.id === 'porcentaje' ? 'white' : '#333'};
-                transition: all 0.2s;
-            `;
-            button.addEventListener('click', () => updateChart(view.id));
-            controlDiv.appendChild(button);
-        });
-    }
-
-    // Tipo de visualización actual
-    let currentView = container.currentView || 'porcentaje';
-
-    // Función para actualizar el gráfico
-    const updateChart = (viewType) => {
-        // Guardar la vista actual para futuras actualizaciones
-        container.currentView = viewType;
-        currentView = viewType;
-        
-        // Actualizar datos según el tipo de visualización
-        let chartData, labels;
-        
-        if (viewType === 'porcentaje') {
-            labels = categorias.map(([cat]) => cat);
-            chartData = categorias.map(([, data]) => data.ventas);
-        } else if (viewType === 'ventas') {
-            labels = categorias.map(([cat]) => cat);
-            chartData = categorias.map(([, data]) => data.ventas);
-        } else if (viewType === 'cantidad') {
-            labels = categorias.map(([cat]) => cat);
-            chartData = categorias.map(([, data]) => data.cantidad);
-        }
-        
-        // Crear un array de colores que coincida con las categorías
-        const colors = labels.map(cat => coloresCategoria[cat]);
-
-        // Configurar opciones según la visualización
-        const options = {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'right',
-                    align: 'center',
-                    labels: {
-                        boxWidth: 15,
-                        padding: 15,
-                        font: { size: 12 }
-                    }
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            const dataIndex = context.dataIndex;
-                            const categoriaLabel = categorias[dataIndex][0];
-                            const data = categorias[dataIndex][1];
-                            const total = categorias.reduce((sum, [, cat]) => sum + cat.ventas, 0);
-                            const percentage = ((data.ventas / total) * 100).toFixed(1);
-                            
-                            return [
-                                `${categoriaLabel}:`,
-                                `Ventas: ${formatoPeso(data.ventas)}`,
-                                `Cantidad: ${data.cantidad.toLocaleString()}`,
-                                `Porcentaje: ${percentage}%`
-                            ];
-                        }
-                    }
-                },
-                datalabels: {
-                    display: true,
-                    color: 'white',
-                    font: { size: 11, weight: 'bold' },
-                    formatter: function(value, context) {
-                        const dataIndex = context.dataIndex;
-                        if (viewType === 'porcentaje') {
-                            const total = chartData.reduce((a, b) => a + b, 0);
-                            const percentage = ((value / total) * 100).toFixed(1);
-                            return `${percentage}%`;
-                        } else if (viewType === 'ventas') {
-                            return `${formatoPeso(value)}`;
-                        } else if (viewType === 'cantidad') {
-                            return `${value.toLocaleString()}`;
-                        }
-                    },
-                    anchor: 'center',
-                    align: 'center',
-                }
-            },
-            layout: {
-                padding: {
-                    top: 20,
-                    right: 120,
-                    bottom: 20,
-                    left: 20
-                }
+    // Función que se utilizará para generar el gráfico con datos filtrados
+    function generarGraficoCategorias(datosFiltrados) {
+        // Procesar datos para incluir tanto ventas como cantidad
+        const categoriaData = datosFiltrados.reduce((acc, venta) => {
+            const categoria = venta['Descrip. familia'] || 'Sin Categoría';
+            if (!acc[categoria]) {
+                acc[categoria] = { ventas: 0, cantidad: 0 };
             }
+            acc[categoria].ventas += parseFloat(venta.Total || 0);
+            acc[categoria].cantidad += parseFloat(venta.Cantidad || 1);
+            return acc;
+        }, {});
+
+        // Convertir y ordenar por ventas
+        const categorias = Object.entries(categoriaData)
+            .sort(([,a], [,b]) => b.ventas - a.ventas);
+
+        // Asignar colores fijos a cada categoría para mantener consistencia
+        const coloresCategoria = {
+            'CALZADOS': '#4CAF50',      // Verde
+            'INDUMENTARIA': '#2196F3',  // Azul
+            'ACCESORIOS': '#FFC107',    // Amarillo
+            'MEDIAS': '#F44336',        // Rojo
+            'ENVIOS': '#9C27B0',        // Púrpura
+            'Sin Categoría': '#607D8B'  // Gris azulado
         };
 
-        // Crear o actualizar el gráfico
-        if (container.chart) {
-            container.chart.data.labels = labels;
-            container.chart.data.datasets[0].data = chartData;
-            container.chart.data.datasets[0].backgroundColor = colors;
-            container.chart.options = options;
-            container.chart.update();
-        } else {
-            container.chart = new Chart(container, {
-                type: 'doughnut',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        data: chartData,
-                        backgroundColor: colors
-                    }]
-                },
-                options: options
+        // Asegurar que todas las categorías tengan un color asignado
+        categorias.forEach(([cat]) => {
+            if (!coloresCategoria[cat]) {
+                // Generar colores para categorías no previstas
+                const coloresDisponibles = [
+                    '#00BCD4', '#FF9800', '#795548', '#E91E63', '#009688',
+                    '#3F51B5', '#CDDC39', '#673AB7', '#FF5722', '#8BC34A'
+                ];
+                const colorIndex = Object.keys(coloresCategoria).length % coloresDisponibles.length;
+                coloresCategoria[cat] = coloresDisponibles[colorIndex];
+            }
+        });
+
+        // Crear controles solo si no existen
+        let controlDiv = container.parentElement.querySelector('.chart-controls');
+        if (!controlDiv) {
+            controlDiv = document.createElement('div');
+            controlDiv.className = 'chart-controls';
+            controlDiv.style.cssText = `
+                display: flex;
+                justify-content: center;
+                gap: 10px;
+                margin-bottom: 15px;
+                width: 100%;
+            `;
+            container.parentElement.insertBefore(controlDiv, container);
+            
+            // Creamos los botones
+            const views = [
+                { id: 'porcentaje', label: 'Porcentajes', icon: 'fa-percent' },
+                { id: 'ventas', label: 'Ventas ($)', icon: 'fa-dollar-sign' },
+                { id: 'cantidad', label: 'Cantidades', icon: 'fa-box' }
+            ];
+
+            views.forEach(view => {
+                const button = document.createElement('button');
+                button.dataset.view = view.id;
+                button.innerHTML = `<i class="fas ${view.icon}"></i> ${view.label}`;
+                button.style.cssText = `
+                    padding: 8px 12px;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 12px;
+                    display: flex;
+                    align-items: center;
+                    gap: 5px;
+                    background-color: ${view.id === 'porcentaje' ? '#4CAF50' : '#f1f1f1'};
+                    color: ${view.id === 'porcentaje' ? 'white' : '#333'};
+                    transition: all 0.2s;
+                `;
+                button.addEventListener('click', () => updateChart(view.id));
+                controlDiv.appendChild(button);
             });
         }
 
-        // Actualizar estado visual de los botones
-        Array.from(controlDiv.querySelectorAll('button')).forEach(btn => {
-            if (btn.dataset.view === viewType) {
-                btn.style.backgroundColor = '#4CAF50';
-                btn.style.color = 'white';
-            } else {
-                btn.style.backgroundColor = '#f1f1f1';
-                btn.style.color = '#333';
-            }
-        });
-    };
+        // Tipo de visualización actual
+        let currentView = container.currentView || 'porcentaje';
 
-    // Inicializar o actualizar con la vista guardada
-    updateChart(currentView);
+        // Función para actualizar el gráfico
+        const updateChart = (viewType) => {
+            // Guardar la vista actual para futuras actualizaciones
+            container.currentView = viewType;
+            currentView = viewType;
+            
+            // Actualizar datos según el tipo de visualización
+            let chartData, labels;
+            
+            if (viewType === 'porcentaje') {
+                labels = categorias.map(([cat]) => cat);
+                chartData = categorias.map(([, data]) => data.ventas);
+            } else if (viewType === 'ventas') {
+                labels = categorias.map(([cat]) => cat);
+                chartData = categorias.map(([, data]) => data.ventas);
+            } else if (viewType === 'cantidad') {
+                labels = categorias.map(([cat]) => cat);
+                chartData = categorias.map(([, data]) => data.cantidad);
+            }
+            
+            // Crear un array de colores que coincida con las categorías
+            const colors = labels.map(cat => coloresCategoria[cat]);
+
+            // Configurar opciones según la visualización
+            const options = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        align: 'center',
+                        labels: {
+                            boxWidth: 15,
+                            padding: 15,
+                            font: { size: 12 }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const dataIndex = context.dataIndex;
+                                const categoriaLabel = categorias[dataIndex][0];
+                                const data = categorias[dataIndex][1];
+                                const total = categorias.reduce((sum, [, cat]) => sum + cat.ventas, 0);
+                                const percentage = ((data.ventas / total) * 100).toFixed(1);
+                                
+                                return [
+                                    `${categoriaLabel}:`,
+                                    `Ventas: ${formatoPeso(data.ventas)}`,
+                                    `Cantidad: ${data.cantidad.toLocaleString()}`,
+                                    `Porcentaje: ${percentage}%`
+                                ];
+                            }
+                        }
+                    },
+                    datalabels: {
+                        display: true,
+                        color: 'white',
+                        font: { size: 11, weight: 'bold' },
+                        formatter: function(value, context) {
+                            const dataIndex = context.dataIndex;
+                            if (viewType === 'porcentaje') {
+                                const total = chartData.reduce((a, b) => a + b, 0);
+                                const percentage = ((value / total) * 100).toFixed(1);
+                                return `${percentage}%`;
+                            } else if (viewType === 'ventas') {
+                                return `${formatoPeso(value)}`;
+                            } else if (viewType === 'cantidad') {
+                                return `${value.toLocaleString()}`;
+                            }
+                        },
+                        anchor: 'center',
+                        align: 'center',
+                    }
+                },
+                layout: {
+                    padding: {
+                        top: 20,
+                        right: 120,
+                        bottom: 20,
+                        left: 20
+                    }
+                }
+            };
+
+            // Crear o actualizar el gráfico
+            if (container.chart) {
+                container.chart.data.labels = labels;
+                container.chart.data.datasets[0].data = chartData;
+                container.chart.data.datasets[0].backgroundColor = colors;
+                container.chart.options = options;
+                container.chart.update();
+            } else {
+                container.chart = new Chart(container, {
+                    type: 'doughnut',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            data: chartData,
+                            backgroundColor: colors
+                        }]
+                    },
+                    options: options
+                });
+            }
+
+            // Actualizar estado visual de los botones
+            Array.from(controlDiv.querySelectorAll('button')).forEach(btn => {
+                if (btn.dataset.view === viewType) {
+                    btn.style.backgroundColor = '#4CAF50';
+                    btn.style.color = 'white';
+                } else {
+                    btn.style.backgroundColor = '#f1f1f1';
+                    btn.style.color = '#333';
+                }
+            });
+        };
+
+        // Inicializar o actualizar con la vista guardada
+        updateChart(currentView);
+    }
+
+    // Añadir filtro de tienda al gráfico
+    añadirFiltroTienda(container, datos, generarGraficoCategorias);
+    
+    // Inicializar el gráfico con todos los datos
+    generarGraficoCategorias(datos);
 }
 
 // Función de utilidad para formatear montos
@@ -1328,84 +1400,102 @@ async function crearGraficoHorarios(datos) {
 
     setupChartContainer(container);
 
-    const ventasPorHora = Array(24).fill(0).map(() => ({ ventas: 0, cantidad: 0 }));
-    
-    datos.forEach(venta => {
-        if (venta['Hora alta']) {
-            const hora = parseInt(venta['Hora alta'].split(':')[0]);
-            if (!isNaN(hora) && hora >= 0 && hora < 24) {
-                ventasPorHora[hora].ventas += parseFloat(venta.Total || 0);
-                ventasPorHora[hora].cantidad += parseFloat(venta.Cantidad || 1);
-            }
-        }
-    });
-
-    if (container.chart) {
-        container.chart.destroy();
+    // Guardamos los datos originales si son nuevos
+    if (datos) {
+        container.originalData = datos;
+    } else if (container.originalData) {
+        datos = container.originalData;
+    } else {
+        container.innerHTML = '<div class="no-data">No hay datos disponibles</div>';
+        return;
     }
-
     
-    const chartConfig = {
-        ...baseChartConfig,
-        scales: {
-            x: {
-                ticks: {
-                    maxRotation: 45,
-                    minRotation: 45,
-                    padding: 10
-                },
-                grid: { display: false }
-            },
-            y: {
-                type: 'linear',
-                position: 'left',
-                ticks: {
-                    callback: value => formatoPeso(value)
-                }
-            },
-            y1: {
-                type: 'linear',
-                position: 'right',
-                grid: {
-                    drawOnChartArea: false
-                },
-                ticks: {
-                    callback: value => value.toLocaleString()
+    // Función para generar el gráfico con datos filtrados
+    function generarGraficoHorarios(datosFiltrados) {
+        const ventasPorHora = Array(24).fill(0).map(() => ({ ventas: 0, cantidad: 0 }));
+        
+        datosFiltrados.forEach(venta => {
+            if (venta['Hora alta']) {
+                const hora = parseInt(venta['Hora alta'].split(':')[0]);
+                if (!isNaN(hora) && hora >= 0 && hora < 24) {
+                    ventasPorHora[hora].ventas += parseFloat(venta.Total || 0);
+                    ventasPorHora[hora].cantidad += parseFloat(venta.Cantidad || 1);
                 }
             }
+        });
+
+        if (container.chart) {
+            container.chart.destroy();
         }
-    };
-
-    container.chart = new Chart(container, {
-        type: 'line',
-        data: {
-            labels: Array.from({length: 24}, (_, i) => `${i.toString().padStart(2, '0')}:00`),
-            datasets: [
-                {
-                    label: 'Ventas',
-                    data: ventasPorHora.map(h => h.ventas),
-                    borderColor: '#4CAF50',
-                    backgroundColor: 'rgba(76, 175, 80, 0.1)',
-                    fill: true,
-                    tension: 0.4,
-                    yAxisID: 'y'
+        
+        const chartConfig = {
+            ...baseChartConfig,
+            scales: {
+                x: {
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 45,
+                        padding: 10
+                    },
+                    grid: { display: false }
                 },
-                {
-                    label: 'Cantidad',
-                    data: ventasPorHora.map(h => h.cantidad),
-                    borderColor: '#2196F3',
-                    backgroundColor: 'rgba(33, 150, 243, 0.1)',
-                    fill: true,
-                    tension: 0.4,
-                    yAxisID: 'y1',
-                    isCantidad: true
+                y: {
+                    type: 'linear',
+                    position: 'left',
+                    ticks: {
+                        callback: value => formatoPeso(value)
+                    }
+                },
+                y1: {
+                    type: 'linear',
+                    position: 'right',
+                    grid: {
+                        drawOnChartArea: false
+                    },
+                    ticks: {
+                        callback: value => value.toLocaleString()
+                    }
                 }
-            ]
-        },
-        options: chartConfig  // Aquí estaba el error, estabas usando options en lugar de chartConfig
-    });
+            }
+        };
 
-    addValueAndGridToggles(container);
+        container.chart = new Chart(container, {
+            type: 'line',
+            data: {
+                labels: Array.from({length: 24}, (_, i) => `${i.toString().padStart(2, '0')}:00`),
+                datasets: [
+                    {
+                        label: 'Ventas',
+                        data: ventasPorHora.map(h => h.ventas),
+                        borderColor: '#4CAF50',
+                        backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Cantidad',
+                        data: ventasPorHora.map(h => h.cantidad),
+                        borderColor: '#2196F3',
+                        backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        yAxisID: 'y1',
+                        isCantidad: true
+                    }
+                ]
+            },
+            options: chartConfig
+        });
+
+        addValueAndGridToggles(container);
+    }
+    
+    // Añadir filtro de tienda
+    añadirFiltroTienda(container, datos, generarGraficoHorarios);
+    
+    // Inicializar el gráfico con todos los datos
+    generarGraficoHorarios(datos);
 }
 
 // Configuración global para Chart.js
@@ -1423,101 +1513,120 @@ async function crearGraficoMarketplace(datos) {
     
     setupLargeChartContainer(container);
 
-    const ventasPorMarketplace = {
-        'Mercado Libre': {
-            ventas: 0,
-            cantidadProductos: 0
-        },
-        'Banco Provincia': {
-            ventas: 0,
-            cantidadProductos: 0
-        }
-    };
-
-    datos.forEach(venta => {
-        if (validarDatosVenta(venta)) {
-            if (venta.tienda.includes('Meli')) {
-                ventasPorMarketplace['Mercado Libre'].ventas += parseFloat(venta.Total || 0);
-                ventasPorMarketplace['Mercado Libre'].cantidadProductos += 1;
-            } else if (venta.tienda.includes('Bapro')) {
-                ventasPorMarketplace['Banco Provincia'].ventas += parseFloat(venta.Total || 0);
-                ventasPorMarketplace['Banco Provincia'].cantidadProductos += 1;
-            }
-        }
-    });
-
-    if (container.chart) {
-        container.chart.destroy();
+    // Guardar datos originales si son nuevos
+    if (datos) {
+        container.originalData = datos;
+    } else if (container.originalData) {
+        datos = container.originalData;
+    } else {
+        container.innerHTML = '<div class="no-data">No hay datos disponibles</div>';
+        return;
     }
 
-    container.chart = new Chart(container, {
-        type: 'bar',
-        data: {
-            labels: ['Mercado Libre', 'Banco Provincia'],
-            datasets: [
-                {
-                    label: 'Ventas',
-                    data: [
-                        ventasPorMarketplace['Mercado Libre'].ventas,
-                        ventasPorMarketplace['Banco Provincia'].ventas
-                    ],
-                    backgroundColor: '#4CAF50',
-                    yAxisID: 'y',
-                    order: 1
-                },
-                {
-                    label: 'Cantidad',
-                    data: [
-                        ventasPorMarketplace['Mercado Libre'].cantidadProductos,
-                        ventasPorMarketplace['Banco Provincia'].cantidadProductos
-                    ],
-                    type: 'line',
-                    borderColor: '#2196F3',
-                    yAxisID: 'y1',
-                    order: 0,
-                    isCantidad: true
+    // Función para generar gráfico con datos filtrados
+    function generarGraficoMarketplace(datosFiltrados) {
+        const ventasPorMarketplace = {
+            'Mercado Libre': {
+                ventas: 0,
+                cantidadProductos: 0
+            },
+            'Banco Provincia': {
+                ventas: 0,
+                cantidadProductos: 0
+            }
+        };
+
+        datosFiltrados.forEach(venta => {
+            if (validarDatosVenta(venta)) {
+                if (venta.tienda.includes('Meli')) {
+                    ventasPorMarketplace['Mercado Libre'].ventas += parseFloat(venta.Total || 0);
+                    ventasPorMarketplace['Mercado Libre'].cantidadProductos += 1;
+                } else if (venta.tienda.includes('Bapro')) {
+                    ventasPorMarketplace['Banco Provincia'].ventas += parseFloat(venta.Total || 0);
+                    ventasPorMarketplace['Banco Provincia'].cantidadProductos += 1;
                 }
-            ]
-        },
-         options: {
-    ...baseChartConfig,
-    scales: {
-        x: {
-            grid: {
-                display: false
-            },
-            ticks: {
-                maxRotation: 0,
-                minRotation: 0
             }
-        },
-        y: {
-            type: 'linear',
-            position: 'left',
-            beginAtZero: true,
-            ticks: {
-                callback: value => formatoPeso(value)
-            },
-            grid: {
-                display: false
-            }
-        },
-        y1: {
-            type: 'linear',
-            position: 'right',
-            beginAtZero: true,
-            ticks: {
-                callback: value => value.toLocaleString()
-            },
-            grid: {
-                display: false
-            }
-        }
-    }
-}
-    });
+        });
 
-    addValueAndGridToggles(container);
+        if (container.chart) {
+            container.chart.destroy();
+        }
+
+        container.chart = new Chart(container, {
+            type: 'bar',
+            data: {
+                labels: ['Mercado Libre', 'Banco Provincia'],
+                datasets: [
+                    {
+                        label: 'Ventas',
+                        data: [
+                            ventasPorMarketplace['Mercado Libre'].ventas,
+                            ventasPorMarketplace['Banco Provincia'].ventas
+                        ],
+                        backgroundColor: '#4CAF50',
+                        yAxisID: 'y',
+                        order: 1
+                    },
+                    {
+                        label: 'Cantidad',
+                        data: [
+                            ventasPorMarketplace['Mercado Libre'].cantidadProductos,
+                            ventasPorMarketplace['Banco Provincia'].cantidadProductos
+                        ],
+                        type: 'line',
+                        borderColor: '#2196F3',
+                        yAxisID: 'y1',
+                        order: 0,
+                        isCantidad: true
+                    }
+                ]
+            },
+            options: {
+                ...baseChartConfig,
+                scales: {
+                    x: {
+                        grid: {
+                            display: false
+                        },
+                        ticks: {
+                            maxRotation: 0,
+                            minRotation: 0
+                        }
+                    },
+                    y: {
+                        type: 'linear',
+                        position: 'left',
+                        beginAtZero: true,
+                        ticks: {
+                            callback: value => formatoPeso(value)
+                        },
+                        grid: {
+                            display: false
+                        }
+                    },
+                    y1: {
+                        type: 'linear',
+                        position: 'right',
+                        beginAtZero: true,
+                        ticks: {
+                            callback: value => value.toLocaleString()
+                        },
+                        grid: {
+                            display: false
+                        }
+                    }
+                }
+            }
+        });
+
+        addValueAndGridToggles(container);
+    }
+    
+    // Añadir filtro de tienda
+    añadirFiltroTienda(container, datos, generarGraficoMarketplace);
+    
+    // Generar con datos completos inicialmente
+    generarGraficoMarketplace(datos);
 }
 
 // 3. Nuevo gráfico de mejores compradores
@@ -1555,181 +1664,148 @@ async function cargarDatosLogistica(file) {
 // Actualización de la función crearGraficoLogistica
 async function crearGraficoLogistica(datos, usarDatosPrueba = true) {
     const container = document.getElementById('graficoMejoresCompradores');
-    if (!container) {
-        console.warn('Contenedor para el gráfico de logística no encontrado');
-        return;
+    if (!container) return;
+
+    // Limpiar controles previos
+    const existingControls = container.parentElement.querySelectorAll('.chart-controls');
+    existingControls.forEach((control, index) => {
+        if (index > 0) control.remove();
+    });
+
+    // Usar datos reales o de prueba según corresponda
+    const datosLogistica = usarDatosPrueba ? generarDatosPrueba() : datos;
+
+    setupChartContainer(container);
+    container.style.height = '360px';
+
+    mostrarGraficoSegunTipo('deliveryTime', datosLogistica);
     }
+
+    // Crear contenedor de controles una sola vez
+    const chartTypeSelector = document.createElement('div');
+    chartTypeSelector.style.cssText = `
+        display: flex;
+        gap: 8px;
+        margin-bottom: 15px;
+        flex-wrap: wrap;
+        justify-content: center;
+    `;
+
+    const metricsContainer = document.createElement('div');
+    metricsContainer.style.cssText = `
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 15px;
+        justify-content: center;
+    `;
+
+    let chartType = 'deliveryTime';
     
-    try {
-        // Renombrar el título de la sección
-        const chartCard = container.closest('.chart-card');
-        const headerElement = chartCard ? chartCard.querySelector('h3') : null;
-        if (headerElement) {
-            headerElement.textContent = 'Análisis de Logística';
-        }
-        
-        // Limpiar cualquier contenido existente
-        container.innerHTML = '';
-        
-        // Ajustar dimensiones del contenedor
-        setupChartContainer(container);
-        container.style.height = '360px'; // Aumentamos la altura para dar más espacio
-        container.style.maxHeight = '360px';
-        container.style.overflow = 'hidden';
-        
-        // Contenedor para botones de tipo de gráfico
-        const chartTypeSelector = document.createElement('div');
-        chartTypeSelector.style.cssText = `
+    const chartTypes = [
+        { id: 'deliveryTime', label: 'Tiempos de Entrega', icon: 'fa-clock' },
+        { id: 'shippingCost', label: 'Costos de Envío', icon: 'fa-dollar-sign' },
+        { id: 'carrierPerformance', label: 'Rendimiento por Transportista', icon: 'fa-truck' },
+        { id: 'carrierDistribution', label: 'Distribución de Envíos', icon: 'fa-chart-pie' }
+    ];
+
+    // Crear botones de tipo de gráfico
+    chartTypes.forEach(type => {
+        const button = document.createElement('button');
+        button.dataset.type = type.id;
+        button.innerHTML = `<i class="fas ${type.icon}"></i> ${type.label}`;
+        button.style.cssText = `
+            padding: 8px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
             display: flex;
-            gap: 8px;
-            margin-bottom: 15px;
-            flex-wrap: wrap;
-            justify-content: center;
+            align-items: center;
+            gap: 5px;
+            background-color: ${type.id === 'deliveryTime' ? '#4CAF50' : '#f1f1f1'};
+            color: ${type.id === 'deliveryTime' ? 'white' : '#333'};
+            white-space: nowrap;
+            transition: all 0.2s ease;
         `;
+        button.addEventListener('click', () => updateChartView(type.id));
+        chartTypeSelector.appendChild(button);
+    });
+
+    // Función para actualizar la vista del gráfico
+    function updateChartView(newChartType) {
+        chartType = newChartType;
         
-        // Contenedor para métricas
-        const metricsContainer = document.createElement('div');
-        metricsContainer.style.cssText = `
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-bottom: 15px;
-            justify-content: center;
-        `;
-        
-        // Estado para el tipo de gráfico
-        let chartType = 'deliveryTime';
-        
-        const chartTypes = [
-            { id: 'deliveryTime', label: 'Tiempos de Entrega', icon: 'fa-clock' },
-            { id: 'shippingCost', label: 'Costos de Envío', icon: 'fa-dollar-sign' },
-            { id: 'carrierPerformance', label: 'Rendimiento por Transportista', icon: 'fa-truck' },
-            { id: 'carrierDistribution', label: 'Distribución de Envíos', icon: 'fa-chart-pie' }
-        ];
-        
-        // Crear botones de tipo con mejor tamaño de fuente
-        chartTypes.forEach(type => {
-            const button = document.createElement('button');
-            button.dataset.type = type.id;
-            button.innerHTML = `<i class="fas ${type.icon}"></i> ${type.label}`;
-            button.style.cssText = `
-                padding: 8px 10px;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 12px;
-                display: flex;
-                align-items: center;
-                gap: 5px;
-                background-color: ${type.id === 'deliveryTime' ? '#4CAF50' : '#f1f1f1'};
-                color: ${type.id === 'deliveryTime' ? 'white' : '#333'};
-                white-space: nowrap;
-                transition: all 0.2s ease;
-            `;
-            button.addEventListener('click', () => {
-                chartType = type.id;
-                
-                // Actualizar estado visual de los botones
-                Array.from(chartTypeSelector.querySelectorAll('button')).forEach(btn => {
-                    if (btn.dataset.type === type.id) {
-                        btn.style.backgroundColor = '#4CAF50';
-                        btn.style.color = 'white';
-                    } else {
-                        btn.style.backgroundColor = '#f1f1f1';
-                        btn.style.color = '#333';
-                    }
-                });
-                
-                // Actualizar gráfico con los datos de prueba o mensaje
-                if (usarDatosPrueba) {
-                    const datosLogistica = generarDatosPrueba();
-                    mostrarGraficoSegunTipo(chartType, datosLogistica);
-                } else {
-                    container.innerHTML = `
-                        <div class="no-data" style="padding: 20px; text-align: center;">
-                            <p style="margin-bottom: 15px;">Este panel mostrará análisis de logística basado en datos de VTEX.</p>
-                            <p>Para visualizar datos, se integrarán con el módulo de Carga de Ventas próximamente.</p>
-                        </div>
-                    `;
-                }
-            });
-            chartTypeSelector.appendChild(button);
-        });
-        
-        // Añadir selectores y contenedor de métricas antes del gráfico
-        container.parentElement.insertBefore(chartTypeSelector, container);
-        container.parentElement.insertBefore(metricsContainer, container);
-        
-        // Función para generar datos de ejemplo
-        function generarDatosPrueba() {
-            const carriers = ['Andreani', 'Mercado Envíos', 'OCA', 'Moova', 'Correo Argentino'];
-            const regions = ['CABA', 'Buenos Aires', 'Córdoba', 'Santa Fe', 'Mendoza', 'Tucumán'];
-            
-            // Generar 100 pedidos de muestra
-            return Array.from({ length: 100 }, (_, i) => {
-                const carrierIdx = Math.floor(Math.random() * carriers.length);
-                const regionIdx = Math.floor(Math.random() * regions.length);
-                
-                // Tiempo de entrega varía según el transportista (para crear patrones)
-                let baseDeliveryTime;
-                switch (carriers[carrierIdx]) {
-                    case 'Andreani': baseDeliveryTime = 2; break;
-                    case 'Correo Argentino': baseDeliveryTime = 4; break;
-                    case 'Mercado Envíos': baseDeliveryTime = 3; break;
-                    case 'OCA': baseDeliveryTime = 2.5; break;
-                    case 'Moova': baseDeliveryTime = 1.5; break;
-                    default: baseDeliveryTime = 3;
-                }
-                
-                // Variación por región
-                const regionMultiplier = regionIdx === 0 ? 0.8 : (1 + regionIdx * 0.15);
-                const deliveryTime = baseDeliveryTime * regionMultiplier * (0.9 + Math.random() * 0.4);
-                
-                // Costo de envío según distancia y peso
-                const baseShippingCost = 1500 + Math.random() * 1000;
-                const regionCostMultiplier = 1 + (regionIdx * 0.2);
-                const shippingCost = baseShippingCost * regionCostMultiplier;
-                
-                // Si el envío llegó a tiempo (probabilidad varía por transportista)
-                let onTimeProb;
-                switch (carriers[carrierIdx]) {
-                    case 'Andreani': onTimeProb = 0.85; break;
-                    case 'Correo Argentino': onTimeProb = 0.7; break;
-                    case 'Mercado Envíos': onTimeProb = 0.9; break;
-                    case 'OCA': onTimeProb = 0.8; break;
-                    case 'Moova': onTimeProb = 0.95; break;
-                    default: onTimeProb = 0.8;
-                }
-                const onTime = Math.random() < onTimeProb;
-                
-                return {
-                    id: `order-${i+1}`,
-                    carrier: carriers[carrierIdx],
-                    region: regions[regionIdx],
-                    deliveryTime: deliveryTime,
-                    shippingCost: shippingCost,
-                    onTime: onTime,
-                    weight: 0.5 + Math.random() * 9.5, // peso en kg
-                    date: new Date(2024, 0, 1 + Math.floor(Math.random() * 120)) // fechas de los últimos 4 meses
-                };
-            });
-        }
-        
-        // Función para mostrar el gráfico según el tipo seleccionado
-        function mostrarGraficoSegunTipo(chartType, data) {
-            // Limpiar contenedor de métricas
-            metricsContainer.innerHTML = '';
-            
-            if (chartType === 'deliveryTime') {
-                mostrarGraficoTiemposEntrega(data);
-            } else if (chartType === 'shippingCost') {
-                mostrarGraficoCostosEnvio(data);
-            } else if (chartType === 'carrierPerformance') {
-                mostrarGraficoRendimientoTransportistas(data);
-            } else if (chartType === 'carrierDistribution') {
-                mostrarGraficoDistribucionTransportistas(data);
+        // Actualizar estado visual de los botones
+        Array.from(chartTypeSelector.querySelectorAll('button')).forEach(btn => {
+            if (btn.dataset.type === newChartType) {
+                btn.style.backgroundColor = '#4CAF50';
+                btn.style.color = 'white';
+            } else {
+                btn.style.backgroundColor = '#f1f1f1';
+                btn.style.color = '#333';
             }
+        });
+
+        // Generar y mostrar datos
+        const datosLogistica = generarDatosPrueba();
+        mostrarGraficoSegunTipo(newChartType, datosLogistica);
+    }
+
+    // Insertar controles antes del gráfico
+//     container.parentElement.insertBefore(chartTypeSelector, container);
+ //   container.parentElement.insertBefore(metricsContainer, container);
+
+    // Función para generar datos de ejemplo
+    function generarDatosPrueba() {
+        const carriers = ['Andreani', 'Mercado Envíos', 'OCA', 'Moova', 'Correo Argentino'];
+        const regions = ['CABA', 'Buenos Aires', 'Córdoba', 'Santa Fe', 'Mendoza', 'Tucumán'];
+        
+        return Array.from({ length: 100 }, (_, i) => {
+            const carrierIdx = Math.floor(Math.random() * carriers.length);
+            const regionIdx = Math.floor(Math.random() * regions.length);
+            
+            let baseDeliveryTime;
+            switch (carriers[carrierIdx]) {
+                case 'Andreani': baseDeliveryTime = 2; break;
+                case 'Correo Argentino': baseDeliveryTime = 4; break;
+                case 'Mercado Envíos': baseDeliveryTime = 3; break;
+                case 'OCA': baseDeliveryTime = 2.5; break;
+                case 'Moova': baseDeliveryTime = 1.5; break;
+                default: baseDeliveryTime = 3;
+            }
+            
+            const regionMultiplier = regionIdx === 0 ? 0.8 : (1 + regionIdx * 0.15);
+            const deliveryTime = baseDeliveryTime * regionMultiplier * (0.9 + Math.random() * 0.4);
+            
+            return {
+                carrier: carriers[carrierIdx],
+                region: regions[regionIdx],
+                deliveryTime: deliveryTime
+            };
+        });
+    }
+
+    // Función principal para mostrar gráficos
+    function mostrarGraficoSegunTipo(tipo, datos) {
+        const container = document.getElementById('graficoMejoresCompradores');
+        container.innerHTML = ''; // Limpiar contenedor
+        
+        switch(tipo) {
+            case 'deliveryTime':
+                mostrarGraficoTiemposEntrega(datos, container);
+                break;
+            case 'shippingCost':
+                mostrarGraficoCostosEnvio(datos);
+                break;
+            case 'carrierPerformance':
+                mostrarGraficoRendimientoTransportistas(datos);
+                break;
+            case 'carrierDistribution':
+                mostrarGraficoDistribucionTransportistas(datos);
+                break;
         }
+    }
         
         // Nueva función para mostrar la distribución de envíos por transportista
         function mostrarGraficoDistribucionTransportistas(data) {
@@ -1828,8 +1904,8 @@ async function crearGraficoLogistica(datos, usarDatosPrueba = true) {
         }
         
         // Función para mostrar gráfico de tiempos de entrega
-        function mostrarGraficoTiemposEntrega(data) {
-            // Calcular tiempos de entrega promedio
+        function mostrarGraficoTiemposEntrega(data, container) {
+            // Implementación del gráfico de tiempos de entrega
             const tiempoPromedioEntrega = data.reduce((sum, item) => sum + (parseFloat(item.deliveryTime) || 0), 0) / data.length;
             
             // Agrupar por rango de días
@@ -2300,11 +2376,9 @@ async function crearGraficoLogistica(datos, usarDatosPrueba = true) {
             `;
         }
         
-    } catch (error) {
-        console.error('Error en el gráfico de logística:', error);
-        container.innerHTML = `<div class="no-data">Error al cargar el gráfico: ${error.message}</div>`;
-    }
-}
+        const datosLogistica = generarDatosPrueba();
+        mostrarGraficoSegunTipo('deliveryTime', datosLogistica);
+    
 
 async function crearGraficoTendenciaCompra(datos) {
     const container = document.getElementById('graficoTendenciaCompra');
@@ -2409,6 +2483,38 @@ async function crearGraficoTendenciaCompra(datos) {
     addValueAndGridToggles(container);
 }
 
+function filtrarDatosParaGrafico(datos, filtrosEspecificos = {}) {
+    return datos.filter(venta => {
+        // Filtro por fecha
+        let cumpleFecha = true;
+        if (filtrosEspecificos.fechaDesde1 || filtrosEspecificos.fechaHasta1) {
+            const fechaVenta = excelDateToJSDate(venta.Fecha);
+            const fechaDesde = filtrosEspecificos.fechaDesde1 ? new Date(filtrosEspecificos.fechaDesde1) : null;
+            const fechaHasta = filtrosEspecificos.fechaHasta1 ? new Date(filtrosEspecificos.fechaHasta1) : null;
+
+            if (fechaHasta) fechaHasta.setHours(23, 59, 59, 999);
+
+            cumpleFecha = (!fechaDesde || fechaVenta >= fechaDesde) && 
+                          (!fechaHasta || fechaVenta <= fechaHasta);
+        }
+
+        // Filtro por razón social
+        const cumpleRazonSocial = !filtrosEspecificos.razonSocial || 
+            filtrosEspecificos.razonSocial === 'all' || 
+            venta.razonSocial === filtrosEspecificos.razonSocial;
+
+        // Filtro por tienda
+        const cumpleTienda = !filtrosEspecificos.tiendas || 
+            filtrosEspecificos.tiendas.length === 0 || 
+            filtrosEspecificos.tiendas.includes('Todo') ||
+            filtrosEspecificos.tiendas.some(tiendaFiltro => 
+                venta.tienda && venta.tienda.toLowerCase().includes(tiendaFiltro.toLowerCase())
+            );
+
+        return cumpleFecha && cumpleRazonSocial && cumpleTienda;
+    });
+}
+
 // Funciones de utilidad
 function formatDate(date) {
     return date.toISOString().split('T')[0];
@@ -2452,6 +2558,43 @@ function actualizarFiltros() {
     });
 
     filtrosActuales = nuevosFiltros;
+
+    // Asegúrate de pasar el filtro actual
+    aplicarFiltrosAGraficos(filtrosActuales);
+}
+
+function aplicarFiltrosAGraficos(filtros) {
+    // Arreglo de funciones de gráficos para actualizar
+    const graficosActualizables = [
+        { funcion: actualizarKPIs, elementoId: 'resumenNumerico' },
+        { funcion: crearGraficoTendencias, elementoId: 'graficoTendencias' },
+        { funcion: crearGraficoMarcas, elementoId: 'graficoMarcas' },
+        { funcion: crearGraficoCategorias, elementoId: 'graficoCategorias' },
+        { funcion: crearGraficoEdades, elementoId: 'graficoEdades' },
+        { funcion: crearGraficoHorarios, elementoId: 'graficoHorarios' },
+        { funcion: crearGraficoMarketplace, elementoId: 'graficoMarketplace' },
+        { funcion: crearGraficoLogistica, elementoId: 'graficoMejoresCompradores' },
+        { funcion: crearGraficoTendenciaCompra, elementoId: 'graficoTendenciaCompra' }
+    ];
+
+    // Obtener datos filtrados
+    getDatosFiltrados().then(datosFiltrados => {
+        // Procesar fechas
+        const datosConFechas = datosFiltrados.map(venta => ({
+            ...venta,
+            Fecha: excelDateToJSDate(venta.Fecha)
+        }));
+
+        // Actualizar cada gráfico
+        graficosActualizables.forEach(grafico => {
+            const elemento = document.getElementById(grafico.elementoId);
+            if (elemento) {
+                grafico.funcion(datosConFechas);
+            }
+        });
+    }).catch(error => {
+        console.error('Error al obtener datos filtrados:', error);
+    });
 }
 
 // También ajustar cuando se aplican filtros
@@ -2503,7 +2646,7 @@ async function loadInitialData() {
             crearGraficoEdades(datosConFechas),
             crearGraficoHorarios(datosConFechas),
             crearGraficoMarketplace(datosConFechas),
-            crearGraficoLogistica(datosConFechas), // Reemplazando el gráfico de mejores compradores
+            crearGraficoLogistica(datosConFechas, true), // Reemplazando el gráfico de mejores compradores
             crearGraficoTendenciaCompra(datosConFechas)
         ]);
 
@@ -2551,48 +2694,37 @@ async function getDatosFiltrados() {
 
             request.onsuccess = () => {
                 let data = request.result;
-                console.log('Datos sin filtrar:', data.length);
 
-                // Si hay filtros activos
+                // Aplicar filtros si están activos
                 if (hayFiltrosActivos()) {
                     data = data.filter(venta => {
                         try {
-                            // Convertir la fecha de la venta a un objeto Date
+                            // Filtro de fecha
                             let fechaVenta = excelDateToJSDate(venta.Fecha);
-                            // Resetear la hora a medianoche para comparar solo fechas
                             fechaVenta = new Date(fechaVenta.toDateString());
 
-                            // Convertir las fechas del filtro a objetos Date
                             let fechaDesde1 = filtrosActuales.fechaDesde1 ? 
                                 new Date(filtrosActuales.fechaDesde1) : null;
                             let fechaHasta1 = filtrosActuales.fechaHasta1 ? 
                                 new Date(filtrosActuales.fechaHasta1) : null;
 
-                            // Asegurarse que fechaHasta1 sea al final del día
                             if (fechaHasta1) {
                                 fechaHasta1.setHours(23, 59, 59, 999);
                             }
 
-                            // Verificar si la fecha está en el rango
                             const cumpleFecha = (!fechaDesde1 || fechaVenta >= fechaDesde1) && 
                                               (!fechaHasta1 || fechaVenta <= fechaHasta1);
 
+                            // Filtro de razón social 
                             const cumpleRazonSocial = filtrosActuales.razonSocial === 'all' || 
                                 venta.razonSocial === filtrosActuales.razonSocial;
 
-                            const cumpleTienda = !filtrosActuales.tiendas.length || 
+                            // Filtro de tiendas más flexible
+                            const cumpleTienda = filtrosActuales.tiendas.length === 0 || 
                                 filtrosActuales.tiendas.includes('Todo') ||
-                                filtrosActuales.tiendas.includes(venta.tienda);
-
-                            // Debugging
-                            if (cumpleFecha) {
-                                console.log('Venta cumple fecha:', {
-                                    fecha: fechaVenta,
-                                    desde: fechaDesde1,
-                                    hasta: fechaHasta1,
-                                    venta: venta
-                                });
-                            }
+                                filtrosActuales.tiendas.some(tiendaFiltro => 
+                                    venta.tienda && venta.tienda.toLowerCase().includes(tiendaFiltro.toLowerCase())
+                                );
 
                             return cumpleFecha && cumpleRazonSocial && cumpleTienda;
                         } catch (error) {
@@ -2602,7 +2734,6 @@ async function getDatosFiltrados() {
                     });
                 }
 
-                console.log('Datos filtrados:', data.length);
                 resolve(data);
             };
 
